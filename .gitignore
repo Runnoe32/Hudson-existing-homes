@@ -1,0 +1,31 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# production
+/build
+
+# local database — contains other people's names & addresses; NEVER commit (see spec §8)
+/data/*.db
+/data/*.db-shm
+/data/*.db-wal
+
+# misc
+.DS_Store
+*.pem
+.vscode/
+
+# debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env
+.env
+.env*.local
