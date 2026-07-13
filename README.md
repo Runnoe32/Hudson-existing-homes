@@ -17,11 +17,24 @@ School District. Companion to the Hudson Land project. Full spec lives in
 ## Setup
 ```bash
 pnpm install
-pnpm db:migrate     # create data/leads.db from the schema
-pnpm seed           # 8 sample leads across every status
-pnpm sample-csv     # write data/sample_county_export_50.csv (for testing import)
-pnpm dev            # http://localhost:3000
+pnpm db:migrate         # create data/leads.db from the schema
+pnpm sync               # PRIMARY: pull ~2,400 existing-home parcels from the county layer (~70s)
+pnpm seed               # optional demo leads across statuses (for the pipeline board)
+pnpm build && pnpm start  # http://localhost:3000  (recommended for daily use)
+# pnpm dev              # alt hot-reload dev server
 ```
+
+## Where the data comes from
+Leads are pulled **live from the Wisconsin Statewide Parcel Map** (the same open ArcGIS
+source the Hudson Land tool uses), filtered to existing homes in the Hudson School District —
+via **`pnpm sync`** or the **⟳ Sync from county** button on the Leads page. Re-syncing refreshes
+county fields (owner, mailing, valuation) but **never overwrites your research** (scores, status,
+notes, probate, beds/sqft). The 243 parcels ≥10 ac also get land enrichment
+(arsenic/septic/slope/TCE) matched in from the land tool.
+
+**Not auto-pullable** (inherent to the data): bedrooms / finished sqft / year built live in
+scrape-restricted assessor detail — fill those per finalist. Probate/obit/tenure/lottery signals
+are entered manually (WCCA forbids scraping). CSV import (`/import`) remains as a fallback.
 
 ## What's here (Phase 1)
 - **Leads** (`/`) — every lead, sorted by total score (fit + motivation), with status badges,

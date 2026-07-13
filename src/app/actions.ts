@@ -11,6 +11,7 @@ import {
   updateLeadField,
   type ImportResult,
 } from "@/db/service";
+import { syncHomes } from "@/db/sync";
 import type { ImportableKey } from "@/lib/constants";
 
 export type { ImportResult };
@@ -80,4 +81,18 @@ export async function importLeads(
   const result = importRows(rows);
   revalidateAll();
   return result;
+}
+
+/**
+ * Pull existing-home parcels live from the WI Statewide Parcel layer and upsert
+ * them (refresh county data, preserve research). Takes ~1 min (~2,400 parcels).
+ */
+export async function syncFromCounty() {
+  try {
+    const r = await syncHomes();
+    revalidateAll();
+    return { ok: true as const, ...r };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "Sync failed." };
+  }
 }

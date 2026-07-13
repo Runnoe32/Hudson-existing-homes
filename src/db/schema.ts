@@ -54,6 +54,18 @@ export const leads = sqliteTable("leads", {
   nextAction: text("next_action"),
   nextActionDate: text("next_action_date"),
 
+  // County-sync fields (auto-populated from the WI Statewide Parcel layer;
+  // refreshed on every sync, but never clobber the user-owned fields above).
+  landValue: integer("land_value"), // LNDVALUE
+  impValue: integer("imp_value"), // IMPVALUE — the house/improvement value
+  lat: real("lat"),
+  lon: real("lon"),
+  propClass: text("prop_class"), // PROPCLASS, e.g. "1,4,5"
+  parcelType: text("parcel_type"), // home-fit | acreage-split
+  absentee: integer("absentee", { mode: "boolean" }).default(false),
+  landData: text("land_data"), // JSON blob of land enrichment (arsenic/septic/slope/tce…) when available
+  syncedAt: integer("synced_at", { mode: "timestamp" }),
+
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

@@ -8,9 +8,18 @@ A **private, local-only** lead tracker for **off-market acquisition of an existi
 
 **Full spec:** `hudson-existing-homes-project.md` — currently lives in the user's **Downloads** folder (not committed to this repo). It defines the objective (§1), ethics ground-rules (§2), lead sources (§3), the fit/motivation scoring rubric (§4), outreach cadence (§5), letter templates (§6), the DB schema (§7), the 5 build phases (§8), and WI legal notes (§9). If you need the spec and it's not in the repo, ask the user to point you at it.
 
-## ✅ CURRENT STATE & HOW TO RESUME (updated 2026-07-12) — read this first
+## ✅ CURRENT STATE & HOW TO RESUME (updated 2026-07-13) — read this first
 
-**Phase 1 (of 5) is BUILT, running, and verified.** It's a local Next.js + SQLite CRM for leads. Phases 2–5 are **not started**.
+**Phase 1 CRM + a live DYNAMIC county pull are BUILT, verified, committed.** Data ingest is now **automatic from the WI Statewide Parcel layer** (same source as Hudson Land, pointed at improved parcels) — CSV import is kept only as a fallback. The DB currently holds **~2,444 leads** (2,193 home-fit + 243 acreage/split + 8 demo seeds). Phases 3–5 not started; Phase 2's district-gate + auto-scoring is partially done (SD gate via SCHOOLDIST filter + preliminary auto Fit/Motivation).
+
+### Dynamic county sync (the primary ingest)
+- **Source:** WI Statewide Parcel Map ArcGIS layer (`services3.arcgis.com/n6uYoouQZW75n5WI/.../Wisconsin_Statewide_Parcels/FeatureServer/0`) — open, no scraping. `src/lib/parcels.ts` builds the query + paginates; `src/db/sync.ts` upserts.
+- **Scope (HOMES_WHERE):** `SCHOOLDIST='HUDSON SCHOOL DISTRICT' AND IMPVALUE>0 AND ((PROPCLASS LIKE '%1%' AND GISACRES 0.75–5 AND CNTASSDVALUE 380k–560k) OR GISACRES>=10)`. Home-fit band + all improved ≥10 ac (split-parcel plays).
+- **Run:** `pnpm sync` (CLI, ~70s) or the **⟳ Sync from county** button on the Leads page (server action `syncFromCounty`). **Upsert on parcel_id: refreshes county fields, NEVER clobbers user research** (scores, status, notes, probate, beds/sqft — verified by `scripts/verify_sync.ts`). New rows get preliminary auto Fit (acreage + assessed-value band) + auto Motivation (absentee/no-LGC/tenure); manual edits win after.
+- **Land match:** the 243 ≥10 ac parcels get land enrichment (arsenic/nitrate/septic/slope/TCE/wetland) attached from the Hudson Land tool's `hudson_improved_enriched.geojson` (path in `sync.ts`, overridable via `LAND_ENRICHED_PATH`) into the `landData` JSON column; summarized by `src/lib/land.ts` and shown on the detail page + as a red flag in the list.
+- **KNOWN GAP:** beds / finished-sqft / year-built are **not** in the free parcel layer (they're in scrape-restricted assessor detail). They auto-pull blank → fill per-finalist. Motivation signals (probate/obit/tenure/lottery/TOD) stay manual (WCCA no-scrape). This is inherent to the data, not a TODO.
+
+**Prefer PRODUCTION mode for daily use of this data-heavy app:** `pnpm build && pnpm start` (fast, robust). `pnpm dev` works in a browser but its render worker can crash on Windows if a request is cut off mid-compile (the app is fine — it's a Next-dev fragility with 2,400-row pages).
 
 **This is deliberately LOCAL-ONLY — no auth, no deploy, no cloud.** The SQLite DB (`data/leads.db`) holds other people's names and mailing addresses (PII); per spec §8 it stays on the box. It's gitignored. **Do not add auth-less deploy or push the DB.** (This is the opposite choice from the land tool, which was moved to Vercel behind Basic Auth — here we keep it off the internet entirely.)
 
@@ -18,9 +27,10 @@ A **private, local-only** lead tracker for **off-market acquisition of an existi
 ```bash
 pnpm install            # once; native better-sqlite3 build is pre-approved in pnpm-workspace.yaml
 pnpm db:migrate         # create data/leads.db from schema (idempotent)
-pnpm seed               # 8 sample leads across every status (idempotent — re-run to reset demo)
-pnpm sample-csv         # write data/sample_county_export_50.csv for testing import
-pnpm dev                # http://localhost:3000
+pnpm sync               # PRIMARY: pull ~2,400 existing-home parcels from the county layer (~70s, network)
+pnpm seed               # optional: 8 demo leads across every status (populates the pipeline board)
+pnpm build && pnpm start  # http://localhost:3000  (recommended for daily use — fast + robust)
+# pnpm dev              # alt: hot-reload dev server (fine in a browser; see dev-fragility note above)
 ```
 
 **The app** (`src/app/`, Next 15 App Router + React 19, plain CSS, no Tailwind):
@@ -48,13 +58,16 @@ pnpm dev                # http://localhost:3000
 ## Repo map
 ```
 src/
-  db/        schema.ts · index.ts (better-sqlite3+drizzle client) · queries.ts (reads) · service.ts (writes — framework-free)
-  lib/       constants.ts (STATUSES/SOURCES/field defs/import field map) · scoring.ts (clamp + total + tier)
-             · coerce.ts (string→typed, money/date parsing) · csv.ts (header→field auto-mapping) · util.ts (todayISO, fmt)
-  app/       page.tsx (leads) · board/ · today/ · new/ · import/ · leads/[id]/ (detail) · actions.ts (server actions) · layout.tsx · globals.css
-  components/ Nav · badges (Status/Score) · StatusSelect · InlineField · NoteComposer · NewLeadForm · ImportClient · DeleteButton
-scripts/     migrate · reset · seed · make_sample_csv · verify_acceptance   (all run via tsx)
-drizzle/     generated migration SQL + meta
+  db/        schema.ts · index.ts (better-sqlite3+drizzle client) · queries.ts (reads + getLeadsFiltered)
+             · service.ts (CRM writes — framework-free) · sync.ts (county upsert: syncHomes/upsertParcels)
+  lib/       constants.ts · scoring.ts (clamp/total/tier) · autoscore.ts (auto Fit/Motivation) · parcels.ts (ArcGIS fetch/map + absentee)
+             · land.ts (land-enrichment summary) · coerce.ts · csv.ts (header→field mapping) · util.ts
+  app/       page.tsx (leads+filters+sync) · board/ · today/ · new/ · import/ · leads/[id]/ (detail+county/land panel)
+             · actions.ts (server actions incl. syncFromCounty) · layout.tsx · globals.css
+  components/ Nav · badges · StatusSelect · InlineField · NoteComposer · NewLeadForm · ImportClient
+             · DeleteButton · SyncButton · LeadFilters
+scripts/     migrate · reset · sync · seed · make_sample_csv · verify_acceptance · verify_sync   (run via tsx)
+drizzle/     generated migration SQL + meta (0000 base, 0001 sync columns)
 data/        leads.db (GITIGNORED — PII) · sample_county_export_50.csv (synthetic, committed)
 ```
 

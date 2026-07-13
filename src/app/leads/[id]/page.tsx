@@ -7,7 +7,8 @@ import { NoteComposer } from "@/components/NoteComposer";
 import { StatusSelect } from "@/components/StatusSelect";
 import { ScoreBadge } from "@/components/badges";
 import { DeleteButton } from "@/components/DeleteButton";
-import { fmtTimestamp } from "@/lib/util";
+import { fmtTimestamp, fmtMoney } from "@/lib/util";
+import { parseLandData, summarizeLand } from "@/lib/land";
 import type { Lead } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,8 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
       </div>
 
       <DateStrip lead={lead} />
+
+      <CountyLandPanel lead={lead} />
 
       <div className="detail-grid">
         {/* Left: editable fields */}
@@ -116,6 +119,70 @@ function DateStrip({ lead }: { lead: Lead }) {
           {it.value ? <b>{it.value}</b> : <span className="muted">—</span>}
         </span>
       ))}
+    </div>
+  );
+}
+
+function CountyLandPanel({ lead }: { lead: Lead }) {
+  const land = summarizeLand(parseLandData(lead.landData));
+  const isCounty = lead.parcelType != null;
+  return (
+    <div className="panel panel-pad" style={{ marginBottom: 16 }}>
+      <div className="row-gap" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+        <p className="fg-title" style={{ margin: 0 }}>
+          County record {isCounty ? "" : "(manual / imported lead)"}
+        </p>
+        <span className="muted" style={{ fontSize: 11.5 }}>
+          {lead.syncedAt ? `synced ${fmtTimestamp(lead.syncedAt)}` : "not county-synced"}
+        </span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
+        <dl className="kv">
+          <dt>Type</dt>
+          <dd>
+            {lead.parcelType === "acreage-split"
+              ? "Acreage / split (≥10 ac)"
+              : lead.parcelType === "home-fit"
+                ? "Home-fit"
+                : "—"}
+          </dd>
+          <dt>House value</dt>
+          <dd>{lead.impValue ? fmtMoney(lead.impValue) : "—"}</dd>
+          <dt>Land value</dt>
+          <dd>{lead.landValue ? fmtMoney(lead.landValue) : "—"}</dd>
+          <dt>Assessed</dt>
+          <dd>{lead.assessedValue ? fmtMoney(lead.assessedValue) : "—"}</dd>
+        </dl>
+        <dl className="kv">
+          <dt>Acreage</dt>
+          <dd>{lead.acreage ?? "—"}</dd>
+          <dt>Prop class</dt>
+          <dd>{lead.propClass || "—"}</dd>
+          <dt>Owner-occ?</dt>
+          <dd>{lead.absentee ? "No — absentee" : "Likely owner-occupant"}</dd>
+          <dt>Mailing</dt>
+          <dd style={{ maxWidth: 260 }}>{lead.mailingAddress || "—"}</dd>
+        </dl>
+        <div>
+          <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>
+            Land data {land ? `· risk: ${land.risk}` : ""}
+          </div>
+          {land ? (
+            <div className="row-gap" style={{ gap: 5, maxWidth: 300 }}>
+              {land.flags.map((f, i) => (
+                <span key={i} className={`pill-flag ${f.cls}`}>
+                  {f.text}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="muted" style={{ fontSize: 12, maxWidth: 260 }}>
+              Not land-matched. Full enrichment (water/septic/slope/TCE) is available for ≥10 ac
+              parcels from the Hudson Land tool.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
