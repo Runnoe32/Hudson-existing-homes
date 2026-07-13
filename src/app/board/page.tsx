@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 
 const COL_CAP = 50; // render at most this many cards per column (score-sorted)
 
-export default function BoardPage() {
-  const board = getBoard();
+export default async function BoardPage() {
+  const board = await getBoard();
   const total = Object.values(board).reduce((n, arr) => n + arr.length, 0);
 
   return (
@@ -35,7 +35,7 @@ export default function BoardPage() {
               <div className="col-body">
                 {items.length === 0 && <div className="col-empty">—</div>}
                 {items.slice(0, COL_CAP).map((l) => (
-                  <Link key={l.id} href={`/leads/${l.id}`} className="mini-card">
+                  <Link key={l.parcelId} href={`/leads/${encodeURIComponent(l.parcelId)}`} className="mini-card">
                     <div className="mc-top">
                       <span className="mc-owner">{l.ownerName || "(unknown)"}</span>
                       <ScoreBadge total={l.total ?? 0} />

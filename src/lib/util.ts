@@ -8,10 +8,12 @@ export function todayISO(): string {
   return local.toISOString().slice(0, 10);
 }
 
-/** Format a unix-epoch Date (from Drizzle timestamp mode) for display. */
-export function fmtTimestamp(d: Date | null | undefined): string {
+/** Format an ISO timestamp string (or Date) for display. */
+export function fmtTimestamp(d: string | Date | null | undefined): string {
   if (!d) return "";
-  return d.toLocaleString(undefined, {
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",

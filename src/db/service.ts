@@ -1,15 +1,12 @@
 /**
- * Framework-free data-mutation layer. All DB writes for leads/notes live here as
- * plain functions so they can be unit/E2E tested without a Next request context.
- * The server actions in src/app/actions.ts are thin wrappers that call these and
- * then revalidate/redirect.
+ * Framework-free CRM mutations against the store. Every write is a
+ * read-modify-write of a single lead keyed by parcelId. The server actions in
+ * src/app/actions.ts are thin wrappers that call these and then revalidate.
  */
-import { eq } from "drizzle-orm";
-import { db } from "./index";
-import { leads, notesLog, type NewLead } from "./schema";
-import { getLead } from "./queries";
-import { coerceValue } from "../lib/coerce";
-import { clampScore, computeTotal } from "../lib/scoring";
+import { getOne, putOne, putMany, removeOne, getAll } from "./store";
+import { blankLead, type Lead, type NoteEntry } from "@/lib/types";
+import { coerceValue } from "@/lib/coerce";
+import { clampScore, computeTotal } from "@/lib/scoring";
 import {
   IMPORTABLE_KEYS,
   STATUSES,
@@ -17,13 +14,13 @@ import {
   STATUS_LABELS,
   type ImportableKey,
   type Status,
-} from "../lib/constants";
-import { todayISO } from "../lib/util";
+} from "@/lib/constants";
+import { todayISO } from "@/lib/util";
 
-export type NoteKind = "note" | "status" | "system";
+const nowISO = () => new Date().toISOString();
 
-export function logNote(leadId: number, body: string, kind: NoteKind) {
-  db.insert(notesLog).values({ leadId, body, kind }).run();
+function pushLog(lead: Lead, body: string, kind: NoteEntry["kind"]) {
+  lead.log = [...(lead.log ?? []), { body, kind, createdAt: nowISO() }];
 }
 
 export interface CreateInput {
@@ -33,99 +30,99 @@ export interface CreateInput {
   source?: string | null;
 }
 
-export function createLeadRecord(
+export async function createLeadRecord(
   input: CreateInput,
-): { ok: true; id: number } | { ok: false; error: string } {
+): Promise<{ ok: true; parcelId: string } | { ok: false; error: string }> {
   const parcelId = String(input.parcelId ?? "").trim();
   if (!parcelId) return { ok: false, error: "Parcel ID is required." };
+  if (await getOne(parcelId)) return { ok: false, error: `Parcel ${parcelId} already exists.` };
 
-  const existing = db.select().from(leads).where(eq(leads.parcelId, parcelId)).get();
-  if (existing) {
-    return { ok: false, error: `Parcel ${parcelId} already exists (opens as lead #${existing.id}).` };
-  }
-
-  const values: NewLead = {
-    parcelId,
-    address: input.address?.trim() || null,
-    ownerName: input.ownerName?.trim() || null,
-    source: input.source?.trim() || null,
-    status: "watchlist",
-    fitScore: 0,
-    motivationScore: 0,
-    total: 0,
-  };
-  const row = db.insert(leads).values(values).returning({ id: leads.id }).get();
-  logNote(row.id, "Lead created.", "system");
-  return { ok: true, id: row.id };
+  const lead = blankLead(parcelId);
+  lead.address = input.address?.trim() || null;
+  lead.ownerName = input.ownerName?.trim() || null;
+  lead.source = input.source?.trim() || null;
+  pushLog(lead, "Lead created.", "system");
+  await putOne(lead);
+  return { ok: true, parcelId };
 }
 
-export function updateLeadField(
-  id: number,
+export async function updateLeadField(
+  parcelId: string,
   key: string,
   rawValue: string,
-): { ok: true; value: unknown; total?: number } | { ok: false; error: string } {
-  const lead = getLead(id);
+): Promise<{ ok: true; parcelId: string; value: unknown; total?: number } | { ok: false; error: string }> {
+  const lead = await getOne(parcelId);
   if (!lead) return { ok: false, error: "Lead not found." };
 
+  // Renaming the parcelId means moving the record to a new key.
   if (key === "parcelId") {
     const v = String(rawValue).trim();
     if (!v) return { ok: false, error: "Parcel ID cannot be empty." };
-    const clash = db.select().from(leads).where(eq(leads.parcelId, v)).get();
-    if (clash && clash.id !== id) return { ok: false, error: "Parcel ID already in use." };
+    if (v !== parcelId) {
+      if (await getOne(v)) return { ok: false, error: "Parcel ID already in use." };
+      const moved: Lead = { ...lead, parcelId: v, updatedAt: nowISO() };
+      await putOne(moved);
+      await removeOne(parcelId);
+      return { ok: true, parcelId: v, value: v };
+    }
+    return { ok: true, parcelId, value: v };
   }
 
-  // Scores are clamped to 0–10 on the way in (§4); everything else coerces by type.
   const isScore = key === "fitScore" || key === "motivationScore";
   const value = isScore ? clampScore(coerceValue(key, rawValue)) : coerceValue(key, rawValue);
-  const patch: Record<string, unknown> = { [key]: value, updatedAt: new Date() };
+  (lead as unknown as Record<string, unknown>)[key] = value;
+  lead.updatedAt = nowISO();
+
   let total: number | undefined;
-
   if (isScore) {
-    const fit = key === "fitScore" ? value : lead.fitScore;
-    const mot = key === "motivationScore" ? value : lead.motivationScore;
-    total = computeTotal(fit, mot);
-    patch.total = total;
+    total = computeTotal(lead.fitScore, lead.motivationScore);
+    lead.total = total;
   }
-
-  db.update(leads).set(patch).where(eq(leads.id, id)).run();
-  return { ok: true, value, total };
+  await putOne(lead);
+  return { ok: true, parcelId, value, total };
 }
 
-export function transitionStatus(
-  id: number,
+export async function transitionStatus(
+  parcelId: string,
   newStatus: string,
-): { ok: true; stamped: string | null } | { ok: false; error: string } {
+): Promise<{ ok: true; stamped: string | null } | { ok: false; error: string }> {
   if (!STATUSES.includes(newStatus as Status)) return { ok: false, error: "Unknown status." };
-  const lead = getLead(id);
+  const lead = await getOne(parcelId);
   if (!lead) return { ok: false, error: "Lead not found." };
   if (lead.status === newStatus) return { ok: true, stamped: null };
 
-  const patch: Record<string, unknown> = { status: newStatus, updatedAt: new Date() };
+  const from = STATUS_LABELS[lead.status as Status] ?? lead.status;
+  const to = STATUS_LABELS[newStatus as Status] ?? newStatus;
+
   const dateField = STATUS_DATE_FIELD[newStatus as Status];
   let stamped: string | null = null;
   if (dateField && !lead[dateField]) {
     stamped = todayISO();
-    patch[dateField] = stamped;
+    lead[dateField] = stamped;
   }
-  db.update(leads).set(patch).where(eq(leads.id, id)).run();
-
-  const from = STATUS_LABELS[lead.status as Status] ?? lead.status;
-  const to = STATUS_LABELS[newStatus as Status] ?? newStatus;
-  logNote(id, `Status: ${from} → ${to}${stamped ? ` — dated ${stamped}` : ""}`, "status");
+  lead.status = newStatus;
+  lead.updatedAt = nowISO();
+  pushLog(lead, `Status: ${from} → ${to}${stamped ? ` — dated ${stamped}` : ""}`, "status");
+  await putOne(lead);
   return { ok: true, stamped };
 }
 
-export function appendNote(id: number, body: string): { ok: boolean; error?: string } {
+export async function appendNote(
+  parcelId: string,
+  body: string,
+): Promise<{ ok: boolean; error?: string }> {
   const text = String(body ?? "").trim();
   if (!text) return { ok: false, error: "Note is empty." };
-  if (!getLead(id)) return { ok: false, error: "Lead not found." };
-  logNote(id, text, "note");
-  db.update(leads).set({ updatedAt: new Date() }).where(eq(leads.id, id)).run();
+  const lead = await getOne(parcelId);
+  if (!lead) return { ok: false, error: "Lead not found." };
+  pushLog(lead, text, "note");
+  lead.updatedAt = nowISO();
+  await putOne(lead);
   return { ok: true };
 }
 
-export function removeLead(id: number) {
-  db.delete(leads).where(eq(leads.id, id)).run(); // notes cascade
+export async function removeLead(parcelId: string): Promise<void> {
+  await removeOne(parcelId);
 }
 
 export interface ImportResult {
@@ -135,51 +132,43 @@ export interface ImportResult {
   errors: string[];
 }
 
-/**
- * Bulk import mapped rows. Dedupe on parcel_id: existing parcels (and repeats
- * within the batch) are skipped, never overwritten.
- */
-export function importRows(rows: Partial<Record<ImportableKey, string>>[]): ImportResult {
+/** CSV import (fallback path). Dedupe on parcelId — existing leads are skipped. */
+export async function importRows(
+  rows: Partial<Record<ImportableKey, string>>[],
+): Promise<ImportResult> {
   const result: ImportResult = { inserted: 0, skipped: 0, skippedParcels: [], errors: [] };
+  const existing = new Set((await getAll()).map((l) => l.parcelId));
+  const seen = new Set<string>();
+  const toWrite: Lead[] = [];
 
-  const existing = new Set(db.select({ p: leads.parcelId }).from(leads).all().map((r) => r.p));
-  const seenInBatch = new Set<string>();
-
-  db.transaction((tx) => {
-    for (let i = 0; i < rows.length; i++) {
-      const raw = rows[i];
-      const parcelId = String(raw.parcelId ?? "").trim();
-      if (!parcelId) {
-        result.errors.push(`Row ${i + 1}: missing parcel_id — skipped.`);
-        continue;
-      }
-      if (existing.has(parcelId) || seenInBatch.has(parcelId)) {
-        result.skipped++;
-        if (result.skippedParcels.length < 25) result.skippedParcels.push(parcelId);
-        continue;
-      }
-      seenInBatch.add(parcelId);
-
-      const values: Record<string, unknown> = { parcelId };
-      for (const key of IMPORTABLE_KEYS) {
-        if (key === "parcelId") continue;
-        if (raw[key] == null || raw[key] === "") continue;
-        const coerced = coerceValue(key, raw[key]);
-        values[key] =
-          key === "fitScore" || key === "motivationScore" ? clampScore(coerced) : coerced;
-      }
-      if (!values.status || !STATUSES.includes(values.status as Status)) {
-        values.status = "watchlist";
-      }
-      values.total = computeTotal(values.fitScore, values.motivationScore);
-
-      const row = tx.insert(leads).values(values as NewLead).returning({ id: leads.id }).get();
-      tx.insert(notesLog)
-        .values({ leadId: row.id, body: "Imported from CSV.", kind: "system" })
-        .run();
-      result.inserted++;
+  for (let i = 0; i < rows.length; i++) {
+    const raw = rows[i];
+    const parcelId = String(raw.parcelId ?? "").trim();
+    if (!parcelId) {
+      result.errors.push(`Row ${i + 1}: missing parcel_id — skipped.`);
+      continue;
     }
-  });
+    if (existing.has(parcelId) || seen.has(parcelId)) {
+      result.skipped++;
+      if (result.skippedParcels.length < 25) result.skippedParcels.push(parcelId);
+      continue;
+    }
+    seen.add(parcelId);
 
+    const lead = blankLead(parcelId);
+    for (const key of IMPORTABLE_KEYS) {
+      if (key === "parcelId") continue;
+      if (raw[key] == null || raw[key] === "") continue;
+      const coerced = coerceValue(key, raw[key]);
+      (lead as unknown as Record<string, unknown>)[key] =
+        key === "fitScore" || key === "motivationScore" ? clampScore(coerced) : coerced;
+    }
+    if (!STATUSES.includes(lead.status as Status)) lead.status = "watchlist";
+    lead.total = computeTotal(lead.fitScore, lead.motivationScore);
+    pushLog(lead, "Imported from CSV.", "system");
+    toWrite.push(lead);
+    result.inserted++;
+  }
+  await putMany(toWrite);
   return result;
 }

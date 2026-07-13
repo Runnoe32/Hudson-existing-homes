@@ -1,19 +1,16 @@
 /**
- * County sync: pull improved parcels from the WI Statewide Parcel layer and
- * upsert them into the leads table. New parcels get preliminary auto-scores;
- * existing parcels have their county fields refreshed but every user-owned field
- * (scores, status, notes, probate, beds/sqft/year — the stuff you research) is
- * preserved. Callable from a script or a server action.
+ * County sync onto the store. Pull improved parcels from the WI Statewide Parcel
+ * layer and upsert them: new parcels get preliminary auto-scores; existing
+ * parcels have county fields refreshed while every user-owned field (scores,
+ * status, notes/log, probate, beds/sqft) is preserved.
  */
 import fs from "node:fs";
-import { eq } from "drizzle-orm";
-import { db } from "./index";
-import { leads, notesLog, type NewLead } from "./schema";
+import { getAllMap, putMany } from "./store";
+import { blankLead, type Lead } from "../lib/types";
 import { fetchHomes, HOMES_WHERE, type ParcelRecord } from "../lib/parcels";
 import { autoFit, autoMotivation } from "../lib/autoscore";
 import { computeTotal } from "../lib/scoring";
 
-/** Where the land tool's enriched improved-parcel file lives (arsenic/septic/slope/TCE…). */
 const LAND_ENRICHED_PATH =
   process.env.LAND_ENRICHED_PATH ??
   "C:\\Users\\ajrun\\hudsonland\\data\\hudson_improved_enriched.geojson";
@@ -24,7 +21,6 @@ const ENRICH_KEYS = [
   "slope_pct", "elev_m", "septic_class", "soil_drain", "soil_wtdep_cm", "soil_bedrock_cm",
 ] as const;
 
-/** parcelId → compact enrichment subset (JSON-serializable), if the file exists. */
 function loadEnrichment(): Map<string, Record<string, unknown>> {
   const map = new Map<string, Record<string, unknown>>();
   try {
@@ -41,7 +37,7 @@ function loadEnrichment(): Map<string, Record<string, unknown>> {
       if (Object.keys(sub).length) map.set(id, sub);
     }
   } catch {
-    // enrichment is best-effort — never block a sync on it
+    /* best-effort */
   }
   return map;
 }
@@ -55,45 +51,35 @@ export interface SyncResult {
   finishedAt: string;
 }
 
-/** County fields that a re-sync is allowed to refresh (everything else is user-owned). */
-function countyPatch(p: ParcelRecord, landData: string | null, now: Date) {
-  return {
-    ownerName: p.ownerName,
-    mailingAddress: p.mailingAddress,
-    address: p.address,
-    municipality: p.municipality,
-    inHudsonSd: true,
-    acreage: p.acreage,
-    landValue: p.landValue,
-    impValue: p.impValue,
-    assessedValue: p.assessedValue,
-    estMarket: p.estMarket,
-    propClass: p.propClass,
-    parcelType: p.parcelType,
-    absentee: p.absentee,
-    lat: p.lat,
-    lon: p.lon,
-    ...(landData ? { landData } : {}),
-    syncedAt: now,
-    updatedAt: now,
-  };
+/** Assign the county-owned fields (safe to refresh every sync) onto a lead. */
+function applyCounty(lead: Lead, p: ParcelRecord, landData: string | null, now: string) {
+  lead.ownerName = p.ownerName;
+  lead.mailingAddress = p.mailingAddress;
+  lead.address = p.address;
+  lead.municipality = p.municipality;
+  lead.inHudsonSd = true;
+  lead.acreage = p.acreage;
+  lead.landValue = p.landValue;
+  lead.impValue = p.impValue;
+  lead.assessedValue = p.assessedValue;
+  lead.estMarket = p.estMarket;
+  lead.propClass = p.propClass;
+  lead.parcelType = p.parcelType;
+  lead.absentee = p.absentee;
+  lead.lat = p.lat;
+  lead.lon = p.lon;
+  if (landData) lead.landData = landData;
+  lead.syncedAt = now;
+  lead.updatedAt = now;
 }
 
-/**
- * Upsert already-fetched parcels into the leads table. Pure DB (no network) so
- * it's unit-testable. New parcels get auto-scores + a log entry; existing
- * parcels have only their county fields refreshed (user research is preserved).
- */
-export function upsertParcels(
+export async function upsertParcels(
   parcels: ParcelRecord[],
   where: string = HOMES_WHERE,
-): SyncResult {
+): Promise<SyncResult> {
   const enrichment = loadEnrichment();
-  const now = new Date();
-
-  const existing = new Map(
-    db.select({ id: leads.id, parcelId: leads.parcelId }).from(leads).all().map((r) => [r.parcelId, r.id]),
-  );
+  const now = new Date().toISOString();
+  const existing = await getAllMap();
 
   const result: SyncResult = {
     fetched: parcels.length,
@@ -101,41 +87,33 @@ export function upsertParcels(
     updated: 0,
     enrichedAttached: 0,
     where,
-    finishedAt: now.toISOString(),
+    finishedAt: now,
   };
 
-  db.transaction((tx) => {
-    for (const p of parcels) {
-      const enr = enrichment.get(p.parcelId);
-      const landData = enr ? JSON.stringify(enr) : null;
-      if (landData) result.enrichedAttached++;
+  const toWrite: Lead[] = [];
+  for (const p of parcels) {
+    const enr = enrichment.get(p.parcelId);
+    const landData = enr ? JSON.stringify(enr) : null;
+    if (landData) result.enrichedAttached++;
 
-      const existingId = existing.get(p.parcelId);
-      if (existingId == null) {
-        const fit = autoFit(p);
-        const mot = autoMotivation(p);
-        const values: NewLead = {
-          parcelId: p.parcelId,
-          ...countyPatch(p, landData, now),
-          fitScore: fit,
-          motivationScore: mot,
-          total: computeTotal(fit, mot),
-          status: "watchlist",
-          source: p.absentee ? "absentee" : null,
-        };
-        const row = tx.insert(leads).values(values).returning({ id: leads.id }).get();
-        tx.insert(notesLog)
-          .values({ leadId: row.id, body: "Synced from county parcel data (new).", kind: "system" })
-          .run();
-        result.inserted++;
-      } else {
-        // Refresh county fields only; preserve all user-owned research + scores.
-        tx.update(leads).set(countyPatch(p, landData, now)).where(eq(leads.id, existingId)).run();
-        result.updated++;
-      }
+    const prior = existing[p.parcelId];
+    if (prior) {
+      applyCounty(prior, p, landData, now);
+      toWrite.push(prior);
+      result.updated++;
+    } else {
+      const lead = blankLead(p.parcelId, now);
+      applyCounty(lead, p, landData, now);
+      lead.fitScore = autoFit(p);
+      lead.motivationScore = autoMotivation(p);
+      lead.total = computeTotal(lead.fitScore, lead.motivationScore);
+      lead.source = p.absentee ? "absentee" : null;
+      lead.log = [{ body: "Synced from county parcel data (new).", kind: "system", createdAt: now }];
+      toWrite.push(lead);
+      result.inserted++;
     }
-  });
-
+  }
+  await putMany(toWrite);
   return result;
 }
 

@@ -6,7 +6,7 @@ import { SyncButton } from "@/components/SyncButton";
 import { LeadFilters } from "@/components/LeadFilters";
 import { fmtMoney } from "@/lib/util";
 import { parseLandData, summarizeLand } from "@/lib/land";
-import type { Lead } from "@/db/schema";
+import type { Lead } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export default async function LeadsPage({
     minTotal: sp.min ? Number(sp.min) : undefined,
     limit: LIMIT,
   };
-  const { rows, total } = getLeadsFiltered(filter);
+  const { rows, total } = await getLeadsFiltered(filter);
 
   return (
     <main className="wrap" style={{ maxWidth: 1320 }}>
@@ -84,13 +84,13 @@ export default async function LeadsPage({
             </thead>
             <tbody>
               {rows.map((l) => (
-                <tr key={l.id}>
+                <tr key={l.parcelId}>
                   <td>
                     <ScoreBadge total={l.total ?? 0} fit={l.fitScore} motivation={l.motivationScore} />
                   </td>
                   <td>
                     <div className="owner-cell">
-                      <Link href={`/leads/${l.id}`}>{l.ownerName || "(unknown owner)"}</Link>
+                      <Link href={`/leads/${encodeURIComponent(l.parcelId)}`}>{l.ownerName || "(unknown owner)"}</Link>
                       {l.parcelType === "acreage-split" && (
                         <span className="pill-flag" style={{ marginLeft: 6 }} title="≥10 acres — split-parcel / land play">
                           ⌂+land
@@ -122,7 +122,7 @@ export default async function LeadsPage({
                     </div>
                   </td>
                   <td>
-                    <StatusSelect id={l.id} status={l.status} size="sm" />
+                    <StatusSelect parcelId={l.parcelId} status={l.status} size="sm" />
                   </td>
                 </tr>
               ))}

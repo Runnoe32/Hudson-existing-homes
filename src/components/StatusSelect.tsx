@@ -6,11 +6,11 @@ import { STATUSES, STATUS_LABELS } from "@/lib/constants";
 import { changeStatus } from "@/app/actions";
 
 export function StatusSelect({
-  id,
+  parcelId,
   status,
   size = "md",
 }: {
-  id: number;
+  parcelId: string;
   status: string;
   size?: "sm" | "md";
 }) {
@@ -24,7 +24,7 @@ export function StatusSelect({
     const prev = value;
     setValue(next);
     start(async () => {
-      const res = await changeStatus(id, next);
+      const res = await changeStatus(parcelId, next);
       if (!res?.ok) {
         setValue(prev);
         setMsg(res?.error ?? "Failed");

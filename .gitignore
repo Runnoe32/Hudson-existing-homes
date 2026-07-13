@@ -10,10 +10,9 @@ next-env.d.ts
 # production
 /build
 
-# local database — contains other people's names & addresses; NEVER commit (see spec §8)
-/data/*.db
-/data/*.db-shm
-/data/*.db-wal
+# local data — contains other people's names & addresses; NEVER commit.
+# Prod reads from Upstash Redis; data/leads.json is only the local dev fallback.
+/data/
 
 # misc
 .DS_Store

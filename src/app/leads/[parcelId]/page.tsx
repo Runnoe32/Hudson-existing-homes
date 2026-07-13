@@ -9,20 +9,19 @@ import { ScoreBadge } from "@/components/badges";
 import { DeleteButton } from "@/components/DeleteButton";
 import { fmtTimestamp, fmtMoney } from "@/lib/util";
 import { parseLandData, summarizeLand } from "@/lib/land";
-import type { Lead } from "@/db/schema";
+import type { Lead } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 const GROUP_ORDER = ["Property", "Owner", "Facts", "Source", "Scoring", "Pipeline"];
 
-export default async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
-  const { id: idStr } = await params;
-  const id = Number(idStr);
-  if (!Number.isFinite(id)) notFound();
+export default async function LeadDetail({ params }: { params: Promise<{ parcelId: string }> }) {
+  const { parcelId: raw } = await params;
+  const parcelId = decodeURIComponent(raw);
 
-  const lead = getLead(id);
+  const lead = await getLead(parcelId);
   if (!lead) notFound();
-  const notes = getLeadNotes(id);
+  const notes = await getLeadNotes(parcelId);
 
   const byGroup = GROUP_ORDER.map((g) => ({
     group: g,
@@ -46,7 +45,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
         </div>
         <div className="row-gap">
           <ScoreBadge total={lead.total ?? 0} fit={lead.fitScore} motivation={lead.motivationScore} />
-          <StatusSelect id={lead.id} status={lead.status} />
+          <StatusSelect parcelId={lead.parcelId} status={lead.status} />
         </div>
       </div>
 
@@ -64,7 +63,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
                 {fields.map((def) => (
                   <InlineField
                     key={def.key}
-                    id={lead.id}
+                    parcelId={lead.parcelId}
                     def={def}
                     value={(lead as unknown as Record<string, unknown>)[def.key]}
                   />
@@ -79,7 +78,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
             </div>
           ))}
           <div className="row-gap" style={{ justifyContent: "flex-end", marginTop: 4 }}>
-            <DeleteButton id={lead.id} label={lead.ownerName || lead.parcelId} />
+            <DeleteButton parcelId={lead.parcelId} label={lead.ownerName || lead.parcelId} />
           </div>
         </div>
 
@@ -88,11 +87,11 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
           <p className="fg-title" style={{ marginBottom: 10 }}>
             Activity log
           </p>
-          <NoteComposer id={lead.id} />
+          <NoteComposer parcelId={lead.parcelId} />
           <div className="log-list">
             {notes.length === 0 && <p className="muted">No entries yet.</p>}
-            {notes.map((n) => (
-              <div key={n.id} className={`log-entry kind-${n.kind}`}>
+            {notes.map((n, i) => (
+              <div key={i} className={`log-entry kind-${n.kind}`}>
                 <div className="log-when">{fmtTimestamp(n.createdAt)}</div>
                 <div className="log-body">{n.body}</div>
               </div>

@@ -1,17 +1,33 @@
-import { and, asc, desc, eq, gte, isNotNull, like, lte, notInArray, or, type SQL } from "drizzle-orm";
-import { db } from "./index";
-import { leads, notesLog, type Lead, type NoteEntry } from "./schema";
-import { todayISO } from "../lib/util";
-import { STATUSES } from "../lib/constants";
+// Reads. Load leads from the store (Redis/JSON) and filter/sort in JS — fine at
+// a few thousand records, and keeps one code path across both backends.
+import { getAll, getOne } from "./store";
+import type { Lead, NoteEntry } from "@/lib/types";
+import { todayISO } from "@/lib/util";
+import { STATUSES } from "@/lib/constants";
 
-/** All leads, best prospects first (total desc, then most recently touched). */
-export function getLeads(): Lead[] {
-  return db.select().from(leads).orderBy(desc(leads.total), desc(leads.updatedAt)).all();
+function byScore(a: Lead, b: Lead): number {
+  if ((b.total ?? 0) !== (a.total ?? 0)) return (b.total ?? 0) - (a.total ?? 0);
+  return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+}
+
+export async function getLeads(): Promise<Lead[]> {
+  return (await getAll()).sort(byScore);
+}
+
+export async function getLead(parcelId: string): Promise<Lead | null> {
+  return getOne(parcelId);
+}
+
+/** Activity log, newest first. */
+export async function getLeadNotes(parcelId: string): Promise<NoteEntry[]> {
+  const lead = await getOne(parcelId);
+  if (!lead) return [];
+  return [...(lead.log ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export interface LeadFilter {
   q?: string;
-  parcelType?: string; // home-fit | acreage-split
+  parcelType?: string;
   absentee?: boolean;
   status?: string;
   minTotal?: number;
@@ -19,75 +35,51 @@ export interface LeadFilter {
   limit?: number;
 }
 
-/** Filtered, score-sorted leads + the total count matching the filter (pre-limit). */
-export function getLeadsFiltered(f: LeadFilter): { rows: Lead[]; total: number } {
-  const conds: SQL[] = [];
+export async function getLeadsFiltered(f: LeadFilter): Promise<{ rows: Lead[]; total: number }> {
+  let rows = await getAll();
   if (f.q) {
-    const pat = `%${f.q.trim()}%`;
-    const clause = or(like(leads.ownerName, pat), like(leads.address, pat), like(leads.parcelId, pat));
-    if (clause) conds.push(clause);
+    const q = f.q.trim().toLowerCase();
+    rows = rows.filter((l) =>
+      [l.ownerName, l.address, l.parcelId].some((v) => v && v.toLowerCase().includes(q)),
+    );
   }
-  if (f.parcelType) conds.push(eq(leads.parcelType, f.parcelType));
-  if (f.absentee) conds.push(eq(leads.absentee, true));
-  if (f.status) conds.push(eq(leads.status, f.status));
-  if (typeof f.minTotal === "number") conds.push(gte(leads.total, f.minTotal));
-  if (f.enrichedOnly) conds.push(isNotNull(leads.landData));
+  if (f.parcelType) rows = rows.filter((l) => l.parcelType === f.parcelType);
+  if (f.absentee) rows = rows.filter((l) => l.absentee);
+  if (f.status) rows = rows.filter((l) => l.status === f.status);
+  if (typeof f.minTotal === "number") rows = rows.filter((l) => (l.total ?? 0) >= f.minTotal!);
+  if (f.enrichedOnly) rows = rows.filter((l) => l.landData != null);
 
-  const where = conds.length ? and(...conds) : undefined;
-  const total = db.select({ id: leads.id }).from(leads).where(where).all().length;
-  const rows = db
-    .select()
-    .from(leads)
-    .where(where)
-    .orderBy(desc(leads.total), desc(leads.updatedAt))
-    .limit(f.limit ?? 250)
-    .all();
-  return { rows, total };
-}
-
-export function getLead(id: number): Lead | undefined {
-  return db.select().from(leads).where(eq(leads.id, id)).get();
-}
-
-export function getLeadNotes(leadId: number): NoteEntry[] {
-  return db
-    .select()
-    .from(notesLog)
-    .where(eq(notesLog.leadId, leadId))
-    .orderBy(desc(notesLog.createdAt))
-    .all();
+  rows.sort(byScore);
+  const total = rows.length;
+  return { rows: rows.slice(0, f.limit ?? 250), total };
 }
 
 /** Leads grouped by status, in pipeline order — powers the board. */
-export function getBoard(): Record<string, Lead[]> {
-  const rows = getLeads();
+export async function getBoard(): Promise<Record<string, Lead[]>> {
+  const rows = (await getAll()).sort(byScore);
   const grouped: Record<string, Lead[]> = {};
   for (const s of STATUSES) grouped[s] = [];
-  for (const row of rows) {
-    (grouped[row.status] ??= []).push(row);
-  }
+  for (const row of rows) (grouped[row.status] ??= []).push(row);
   return grouped;
 }
 
-/**
- * "Today" queue: leads with a next_action_date on or before today, excluding
- * finished pipelines (closed/dead). Soonest / most-overdue first.
- */
-export function getTodayLeads(): Lead[] {
-  return db
-    .select()
-    .from(leads)
-    .where(
-      and(
-        isNotNull(leads.nextActionDate),
-        lte(leads.nextActionDate, todayISO()),
-        notInArray(leads.status, ["closed", "dead"]),
-      ),
+/** "Today" queue: next_action_date <= today, excluding closed/dead. */
+export async function getTodayLeads(): Promise<Lead[]> {
+  const today = todayISO();
+  return (await getAll())
+    .filter(
+      (l) =>
+        l.nextActionDate != null &&
+        l.nextActionDate <= today &&
+        l.status !== "closed" &&
+        l.status !== "dead",
     )
-    .orderBy(asc(leads.nextActionDate), desc(leads.total))
-    .all();
+    .sort((a, b) => {
+      const d = (a.nextActionDate ?? "").localeCompare(b.nextActionDate ?? "");
+      return d !== 0 ? d : (b.total ?? 0) - (a.total ?? 0);
+    });
 }
 
-export function countLeads(): number {
-  return db.select().from(leads).all().length;
+export async function countLeads(): Promise<number> {
+  return (await getAll()).length;
 }

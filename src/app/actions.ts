@@ -22,16 +22,17 @@ function revalidateAll() {
   revalidatePath("/today");
 }
 
+const detail = (parcelId: string) => `/leads/${encodeURIComponent(parcelId)}`;
+
 export interface CreateState {
   error?: string;
 }
 
-/** Create a new lead (useActionState-compatible). Redirects to it on success. */
 export async function createLead(
   _prev: CreateState | null,
   formData: FormData,
 ): Promise<CreateState> {
-  const res = createLeadRecord({
+  const res = await createLeadRecord({
     parcelId: String(formData.get("parcelId") ?? ""),
     ownerName: String(formData.get("ownerName") ?? ""),
     address: String(formData.get("address") ?? ""),
@@ -39,54 +40,46 @@ export async function createLead(
   });
   if (!res.ok) return { error: res.error };
   revalidateAll();
-  redirect(`/leads/${res.id}`);
+  redirect(detail(res.parcelId));
 }
 
-/** Inline single-field edit. Recomputes `total` when a score changes. */
-export async function updateField(id: number, key: string, rawValue: string) {
-  const res = updateLeadField(id, key, rawValue);
+export async function updateField(parcelId: string, key: string, rawValue: string) {
+  const res = await updateLeadField(parcelId, key, rawValue);
   if (!res.ok) return { ok: false as const, error: res.error };
   revalidateAll();
-  revalidatePath(`/leads/${id}`);
-  return { ok: true as const, value: res.value, total: res.total };
+  revalidatePath(detail(res.parcelId));
+  return { ok: true as const, value: res.value, total: res.total, parcelId: res.parcelId };
 }
 
-/** Status transition — stamps the matching date column + logs the change. */
-export async function changeStatus(id: number, newStatus: string) {
-  const res = transitionStatus(id, newStatus);
+export async function changeStatus(parcelId: string, newStatus: string) {
+  const res = await transitionStatus(parcelId, newStatus);
   if (!res.ok) return { ok: false as const, error: res.error };
   revalidateAll();
-  revalidatePath(`/leads/${id}`);
+  revalidatePath(detail(parcelId));
   return { ok: true as const, stamped: res.stamped };
 }
 
-/** Append a free-text note to a lead's timestamped log. */
-export async function addNote(id: number, body: string) {
-  const res = appendNote(id, body);
+export async function addNote(parcelId: string, body: string) {
+  const res = await appendNote(parcelId, body);
   if (!res.ok) return { ok: false as const, error: res.error };
-  revalidatePath(`/leads/${id}`);
+  revalidatePath(detail(parcelId));
   return { ok: true as const };
 }
 
-export async function deleteLead(id: number) {
-  removeLead(id);
+export async function deleteLead(parcelId: string) {
+  await removeLead(parcelId);
   revalidateAll();
   redirect("/");
 }
 
-/** Bulk import mapped rows. Dedupe on parcel_id (existing parcels skipped). */
 export async function importLeads(
   rows: Partial<Record<ImportableKey, string>>[],
 ): Promise<ImportResult> {
-  const result = importRows(rows);
+  const result = await importRows(rows);
   revalidateAll();
   return result;
 }
 
-/**
- * Pull existing-home parcels live from the WI Statewide Parcel layer and upsert
- * them (refresh county data, preserve research). Takes ~1 min (~2,400 parcels).
- */
 export async function syncFromCounty() {
   try {
     const r = await syncHomes();

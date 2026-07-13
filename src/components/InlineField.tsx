@@ -13,11 +13,11 @@ function toInputValue(v: unknown): string {
 }
 
 export function InlineField({
-  id,
+  parcelId,
   def,
   value,
 }: {
-  id: number;
+  parcelId: string;
   def: FieldDef;
   value: unknown;
 }) {
@@ -30,7 +30,7 @@ export function InlineField({
   function commit(next: string) {
     if (next === toInputValue(value) && !saved) return; // nothing changed
     start(async () => {
-      const res = await updateField(id, def.key, next);
+      const res = await updateField(parcelId, def.key, next);
       if (!res?.ok) {
         setErr(res?.error ?? "Save failed");
         setSaved(false);

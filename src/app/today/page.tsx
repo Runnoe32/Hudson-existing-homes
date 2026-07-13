@@ -6,8 +6,8 @@ import { todayISO } from "@/lib/util";
 
 export const dynamic = "force-dynamic";
 
-export default function TodayPage() {
-  const leads = getTodayLeads();
+export default async function TodayPage() {
+  const leads = await getTodayLeads();
   const today = todayISO();
 
   return (
@@ -45,7 +45,7 @@ export default function TodayPage() {
               {leads.map((l) => {
                 const overdue = (l.nextActionDate ?? "") < today;
                 return (
-                  <tr key={l.id}>
+                  <tr key={l.parcelId}>
                     <td>
                       <span
                         className={`pill-flag ${overdue ? "warn" : ""}`}
@@ -59,7 +59,7 @@ export default function TodayPage() {
                     </td>
                     <td>
                       <div className="owner-cell">
-                        <Link href={`/leads/${l.id}`}>{l.ownerName || l.parcelId}</Link>
+                        <Link href={`/leads/${encodeURIComponent(l.parcelId)}`}>{l.ownerName || l.parcelId}</Link>
                       </div>
                       <div className="addr-cell">
                         {l.nextAction || <span className="muted">(no action text)</span>}
@@ -67,7 +67,7 @@ export default function TodayPage() {
                       </div>
                     </td>
                     <td>
-                      <StatusSelect id={l.id} status={l.status} size="sm" />
+                      <StatusSelect parcelId={l.parcelId} status={l.status} size="sm" />
                     </td>
                   </tr>
                 );

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addNote } from "@/app/actions";
 
-export function NoteComposer({ id }: { id: number }) {
+export function NoteComposer({ parcelId }: { parcelId: string }) {
   const [body, setBody] = useState("");
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -13,7 +13,7 @@ export function NoteComposer({ id }: { id: number }) {
     const text = body.trim();
     if (!text) return;
     start(async () => {
-      const res = await addNote(id, text);
+      const res = await addNote(parcelId, text);
       if (res?.ok) {
         setBody("");
         router.refresh();

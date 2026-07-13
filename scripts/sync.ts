@@ -2,7 +2,10 @@
  * Pull existing-home parcels from the county/state parcel layer into the tracker.
  * Run: pnpm sync   (needs network; Claude's sandbox needs dangerouslyDisableSandbox)
  */
+import { loadEnvLocal } from "./loadenv";
 import { syncHomes } from "../src/db/sync";
+
+loadEnvLocal(); // if Upstash creds are set, sync writes to Redis; else the local file
 
 const t0 = Date.now();
 syncHomes()

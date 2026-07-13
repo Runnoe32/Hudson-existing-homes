@@ -62,8 +62,7 @@ export interface FieldDef {
 }
 
 export const LEAD_FIELDS: FieldDef[] = [
-  // Identity / location
-  { key: "parcelId", label: "Parcel ID", type: "text", group: "Property", colSpan: 1 },
+  // Identity / location (parcelId is the storage key — shown read-only in the header, not here)
   { key: "address", label: "Situs address", type: "text", group: "Property", colSpan: 2 },
   { key: "municipality", label: "Municipality", type: "text", group: "Property" },
   { key: "inHudsonSd", label: "In Hudson SD", type: "bool", group: "Property" },

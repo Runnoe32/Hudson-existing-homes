@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 import { deleteLead } from "@/app/actions";
 
-export function DeleteButton({ id, label }: { id: number; label: string }) {
+export function DeleteButton({ parcelId, label }: { parcelId: string; label: string }) {
   const [pending, start] = useTransition();
   return (
     <button
@@ -11,7 +11,7 @@ export function DeleteButton({ id, label }: { id: number; label: string }) {
       disabled={pending}
       onClick={() => {
         if (confirm(`Delete lead "${label}"? This cannot be undone.`)) {
-          start(() => deleteLead(id));
+          start(() => deleteLead(parcelId));
         }
       }}
     >
