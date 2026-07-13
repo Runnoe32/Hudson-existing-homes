@@ -18,8 +18,7 @@ School District. Companion to the Hudson Land project. Full spec lives in
 ```bash
 pnpm install
 pnpm db:migrate         # create data/leads.db from the schema
-pnpm sync               # PRIMARY: pull ~2,400 existing-home parcels from the county layer (~70s)
-pnpm seed               # optional demo leads across statuses (for the pipeline board)
+pnpm sync               # pull ~2,400 existing-home parcels from the county layer (~70s)
 pnpm build && pnpm start  # http://localhost:3000  (recommended for daily use)
 # pnpm dev              # alt hot-reload dev server
 ```
@@ -61,23 +60,21 @@ each clamped to 0–10.
 | `pnpm db:generate` | regenerate Drizzle migration SQL from `schema.ts` |
 | `pnpm db:migrate` | apply migrations to `data/leads.db` |
 | `pnpm db:reset` | delete the local DB file |
-| `pnpm seed` | (re)seed 8 sample leads |
-| `pnpm sample-csv` | generate the 50-row test CSV |
-| `tsx scripts/verify_acceptance.ts` | end-to-end acceptance check (import 50 / edit scores / status transition) |
+| `pnpm sync` | pull existing-home parcels from the county layer |
+| `tsx scripts/verify_sync.ts` | assert county sync refreshes county data but preserves user research |
 
-## Acceptance (§8, verified)
-`db:reset → db:migrate → seed → sample-csv → tsx scripts/verify_acceptance.ts` — imports a
-50-row CSV (mapped, deduped), edits scores (total recomputes + clamps), and moves a lead
-`watchlist → letter1_sent` with the date stamped and logged. All checks pass.
+## Data policy
+The tracker holds **real county data only** — the seed/sample-CSV tooling was removed so no
+fake/inaccurate leads can enter. `data/leads.db` is gitignored (real PII, never committed).
 
 ## Layout
 ```
 src/
-  db/        schema.ts · index.ts (client) · queries.ts (reads) · service.ts (writes)
-  lib/       constants.ts · scoring.ts · coerce.ts · csv.ts · util.ts
-  app/       page.tsx (leads) · board/ · today/ · new/ · import/ · leads/[id]/ · actions.ts
-  components/ Nav · badges · StatusSelect · InlineField · NoteComposer · NewLeadForm · ImportClient · DeleteButton
-scripts/     migrate · reset · seed · make_sample_csv · verify_acceptance
+  db/        schema.ts · index.ts (client) · queries.ts (reads) · service.ts (CRM writes) · sync.ts (county upsert)
+  lib/       constants.ts · scoring.ts · autoscore.ts · parcels.ts · land.ts · coerce.ts · csv.ts · util.ts
+  app/       page.tsx (leads+filters+sync) · board/ · today/ · new/ · import/ · leads/[id]/ · actions.ts
+  components/ Nav · badges · StatusSelect · InlineField · NoteComposer · NewLeadForm · ImportClient · DeleteButton · SyncButton · LeadFilters
+scripts/     migrate · reset · sync · verify_sync
 ```
 
 ## Next (not built yet)
