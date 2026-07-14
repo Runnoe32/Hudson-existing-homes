@@ -1,23 +1,24 @@
-# Hudson Existing Homes — Lead Tracker (Phase 1)
+# Hudson Existing Homes — Lead Tracker
 
-Local-only tracker for off-market outreach to likely-seller homeowners in the Hudson
-School District. Companion to the Hudson Land project. Full spec lives in
-`hudson-existing-homes-project.md`; this app implements **Phase 1 (§8)**.
+Tracker for off-market outreach to likely-seller homeowners in the Hudson School District.
+Companion to the Hudson Land project. Full spec in `hudson-existing-homes-project.md`.
 
-> ⚠️ **Local only.** The SQLite database (`data/leads.db`) holds other people's names and
-> addresses. It is gitignored and this app has **no auth and is not deployed** — keep it on
-> your machine (spec §8).
+**Live (password-gated):** https://hudson-existing-homes.vercel.app — HTTP Basic Auth
+(user `hudson`, password in the owner's password manager / Vercel `SITE_PASSWORD`).
+
+> ⚠️ **Holds real homeowner PII.** Data lives in Upstash Redis (prod) behind app-level auth;
+> `data/leads.json` (local dev fallback) is gitignored and never committed. Keep auth on.
 
 ## Stack
-- Next.js 15 (App Router) + React 19
-- SQLite via **Drizzle ORM** + `better-sqlite3`
-- Plain CSS (no Tailwind)
-- Server Actions for all mutations; framework-free logic in `src/db/service.ts`
+- Next.js 15 (App Router) + React 19, TypeScript, plain CSS
+- **Upstash Redis** in prod / local **JSON file** in dev (`src/db/store.ts`) — no ORM
+- Deployed on Vercel (git-connected: push to `master` auto-deploys)
+- Server Actions for mutations; framework-free logic in `src/db/service.ts` + `sync.ts`
 
 ## Setup
 ```bash
 pnpm install
-pnpm db:migrate         # create data/leads.db from the schema
+# create .env.local with KV_REST_API_URL / KV_REST_API_TOKEN to use Redis (else it uses data/leads.json)
 pnpm sync               # pull ~2,400 existing-home parcels from the county layer (~70s)
 pnpm build && pnpm start  # http://localhost:3000  (recommended for daily use)
 # pnpm dev              # alt hot-reload dev server
