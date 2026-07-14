@@ -16,14 +16,30 @@ type ColorBy = "score" | "type";
 const SATELLITE =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
-// Score tiers (match the score badge): ≥12 letter, 9–11 watchlist, else low.
+// Bright, satellite-legible buckets. Finer than the §4 12/9 cutoffs so the
+// current (mostly auto-scored, low) data still shows variation; hotter = higher.
 function scoreColor(total: number): string {
-  return total >= 12 ? "#37b24d" : total >= 9 ? "#f5b301" : "#adb5bd";
+  if (total >= 12) return "#ff1744"; // red — hottest
+  if (total >= 9) return "#ff9100"; // orange
+  if (total >= 6) return "#ffea00"; // yellow
+  if (total >= 3) return "#00e5ff"; // cyan
+  return "#c8d6e0"; // pale — lowest
 }
-// Parcel type: home-fit green, acreage/split purple.
+const SCORE_LEGEND = [
+  { c: "#ff1744", t: "≥12" },
+  { c: "#ff9100", t: "9–11" },
+  { c: "#ffea00", t: "6–8" },
+  { c: "#00e5ff", t: "3–5" },
+  { c: "#c8d6e0", t: "0–2" },
+];
+// Parcel type: home-fit green, acreage/split magenta.
 function typeColor(t: string | null): string {
-  return t === "acreage-split" ? "#9775fa" : "#37b24d";
+  return t === "acreage-split" ? "#d500f9" : "#00e676";
 }
+const TYPE_LEGEND = [
+  { c: "#00e676", t: "home-fit" },
+  { c: "#d500f9", t: "acreage/split" },
+];
 
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -88,16 +104,21 @@ export function LeadsExplorer({ rows, pins, total }: { rows: Lead[]; pins: LeadP
     for (const p of pins) {
       const color = colorBy === "score" ? scoreColor(p.total) : typeColor(p.parcelType);
       const m = L.circleMarker([p.lat, p.lon], {
-        radius: 5,
-        weight: 1,
-        color: "rgba(0,0,0,0.45)",
+        radius: 6,
+        weight: 1.5,
+        color: "rgba(0,0,0,0.55)",
         fillColor: color,
-        fillOpacity: 0.9,
+        fillOpacity: 0.95,
       });
       m.bindPopup(
-        `<b>${esc(p.ownerName || "(unknown)")}</b><br/>score ${p.total} · ${p.parcelType ?? "—"}<br/>` +
-          `<a href="/leads/${encodeURIComponent(p.parcelId)}">Open lead →</a>`,
+        `<div style="min-width:150px">` +
+          `<b>${esc(p.ownerName || "(unknown)")}</b>` +
+          `<div style="color:#5b6675;font-size:12px;margin:3px 0">score ${p.total} · ${p.parcelType ?? "—"} · ${esc(p.status)}</div>` +
+          `<a href="/leads/${encodeURIComponent(p.parcelId)}" style="font-size:12px">Open full lead ↗</a>` +
+          `</div>`,
+        { autoPan: true, closeButton: true },
       );
+      // Click a pin = zoom to it on the map (not navigate). The popup link is opt-in.
       m.on("click", () => setSelected(p.parcelId));
       m.addTo(map);
       markers.current.set(p.parcelId, m);
@@ -113,16 +134,21 @@ export function LeadsExplorer({ rows, pins, total }: { rows: Lead[]; pins: LeadP
     map.fitBounds(bounds, { padding: [24, 24], maxZoom: 14 });
   }, [ready, pinsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fly to + highlight the selected lead.
+  // Select (from a pin OR a table row) = bring the map into view and zoom to the
+  // parcel so you can see where it is (like the land tool). Never navigates.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !selected) return;
     const m = markers.current.get(selected);
     if (m) {
-      map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 14), { duration: 0.6 });
-      m.openPopup();
+      mapEl.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      // let the scroll settle, then fly + fix Leaflet's size after any layout shift
+      setTimeout(() => {
+        map.invalidateSize();
+        map.flyTo(m.getLatLng(), 16, { duration: 0.7 });
+        m.openPopup();
+      }, 120);
     }
-    document.getElementById(`row-${selected}`)?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
   return (
@@ -140,18 +166,9 @@ export function LeadsExplorer({ rows, pins, total }: { rows: Lead[]; pins: LeadP
           </button>
         </div>
         <div className="legend">
-          {colorBy === "score" ? (
-            <>
-              <Chip c="#37b24d" t="≥12 letter" />
-              <Chip c="#f5b301" t="9–11 watch" />
-              <Chip c="#adb5bd" t="<9" />
-            </>
-          ) : (
-            <>
-              <Chip c="#37b24d" t="home-fit" />
-              <Chip c="#9775fa" t="acreage/split" />
-            </>
-          )}
+          {(colorBy === "score" ? SCORE_LEGEND : TYPE_LEGEND).map((x) => (
+            <Chip key={x.t} c={x.c} t={x.t} />
+          ))}
         </div>
       </div>
 
