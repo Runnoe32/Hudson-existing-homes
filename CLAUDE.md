@@ -8,9 +8,9 @@ A **private, local-only** lead tracker for **off-market acquisition of an existi
 
 **Full spec:** `hudson-existing-homes-project.md` — currently lives in the user's **Downloads** folder (not committed to this repo). It defines the objective (§1), ethics ground-rules (§2), lead sources (§3), the fit/motivation scoring rubric (§4), outreach cadence (§5), letter templates (§6), the DB schema (§7), the 5 build phases (§8), and WI legal notes (§9). If you need the spec and it's not in the repo, ask the user to point you at it.
 
-## ✅ CURRENT STATE & HOW TO RESUME (updated 2026-07-13) — read this first
+## ✅ CURRENT STATE & HOW TO RESUME (updated 2026-07-14) — read this first
 
-**Phase 1 CRM + a live DYNAMIC county pull are BUILT, verified, committed.** Data ingest is now **automatic from the WI Statewide Parcel layer** (same source as Hudson Land, pointed at improved parcels) — CSV import is kept only as a fallback. The DB holds **2,436 REAL leads** (2,193 home-fit + 243 acreage/split). **No fake/demo/sample data** — the user asked (2026-07-13) that only accurate county data live in the tracker; the seed + sample-CSV tooling was DELETED. Phases 3–5 not started; Phase 2's district-gate + auto-scoring is partially done (SD gate via SCHOOLDIST filter + preliminary auto Fit/Motivation).
+**DEPLOYED & LIVE.** CRM + dynamic county pull + a **satellite map** are built, deployed, and password-gated at **https://hudson-existing-homes.vercel.app**. Data ingest is **automatic from the WI Statewide Parcel layer** (same source as Hudson Land, pointed at improved parcels); CSV import is a fallback. **2,436 REAL leads** (2,193 home-fit + 243 acreage/split) in Upstash Redis. **No fake/demo/sample data** (seed + sample tooling deleted per user 2026-07-13). Phases 3–5 not started; Phase 2's SD-gate + auto-scoring is partially done (SCHOOLDIST filter + preliminary auto Fit/Motivation).
 
 ### Dynamic county sync (the primary ingest)
 - **Source:** WI Statewide Parcel Map ArcGIS layer (`services3.arcgis.com/n6uYoouQZW75n5WI/.../Wisconsin_Statewide_Parcels/FeatureServer/0`) — open, no scraping. `src/lib/parcels.ts` builds the query + paginates; `src/db/sync.ts` upserts.
@@ -37,20 +37,19 @@ pnpm push-store         # push local data/leads.json → Redis (used to seed/ref
 ```
 
 **The app** (`src/app/`, Next 15 App Router + React 19, plain CSS, no Tailwind):
-- **Leads** (`/`) — all leads sorted by **total score** (fit + motivation), status badges, fit/motivation split, signal flags (absentee / no-lottery-credit / 25yr+ tenure / probate), inline status dropdown.
-- **Pipeline** (`/board`) — kanban, one column per status.
-- **Today** (`/today`) — `next_action_date <= today` (excludes closed/dead), most-overdue first.
-- **Lead detail** (`/leads/[id]`) — inline-edit every §7 field (saves on blur/change; `total` recomputes live), + a timestamped **activity log**; status changes auto-append log entries.
-- **New lead** (`/new`) — quick create; `parcel_id` required + unique.
-- **Import CSV** (`/import`) — upload a county export, **map columns** (auto-guessed from headers, override any / ignore), import with **dedupe on `parcel_id`** (existing parcels skipped, never overwritten).
+- **Leads** (`/`) — **satellite map** (`src/components/LeadsExplorer.tsx`, Leaflet + Esri imagery, all filtered pins) above a score-sorted table. Map has a **Score↔Type colour toggle** (score = 5 buckets 0-2/3-5/6-8/9-11/12+ hotter=higher; type = green home-fit / magenta acreage-split) + legend. **Two-way link:** click a pin → scroll map into view + fly/zoom to it + info popup (does NOT navigate; "Open full lead" is an opt-in link); click a table row → same fly/zoom + highlight. Table shows top 250 by score, map shows all matches. Filters (type/absentee/status/score/search via `LeadFilters` → URL params) drive both. `SyncButton` (⟳ Sync from county) in the header.
+- **Pipeline** (`/board`) — kanban, one column per status (capped 50/col).
+- **Today** (`/today`) — `nextActionDate <= today` (excludes closed/dead), most-overdue first.
+- **Lead detail** (`/leads/[parcelId]`) — county/land panel + inline-edit every field (saves on blur/change; `total` recomputes live) + timestamped **activity log** (`lead.log`); status changes auto-append log entries.
+- **New lead** (`/new`) — quick create; parcelId required + unique. **Import CSV** (`/import`) — fallback; column-map + dedupe on parcelId.
 
-**Scoring:** manual in Phase 1 (auto-scoring per §4 is Phase 2). `total = fit + motivation`, each **clamped 0–10** on write. §4 tiers: ≥12 → letter, 9–11 → watchlist.
+**Scoring:** `total = fit + motivation`, each **clamped 0–10**. New synced rows get a *preliminary auto* Fit (acreage + assessed-value band, `src/lib/autoscore.ts`) + Motivation (absentee/no-LGC/tenure); **manual edits win and are preserved on re-sync.** Most current data is auto-scored ≤7 until you score leads up. §4 tiers: ≥12 letter, 9–11 watchlist.
 
-**Architecture note:** all DB mutations live in framework-free modules — CRM edits in **`src/db/service.ts`**, county upsert in **`src/db/sync.ts`** (plain functions); the server actions in `src/app/actions.ts` are thin wrappers that call these then `revalidatePath`/`redirect`. This keeps the logic testable outside a Next request — `scripts/verify_sync.ts` imports the upsert directly and asserts county fields refresh while user research is preserved. **When adding write logic, put it in the service/sync module, not the action.**
+**Architecture note:** all data mutations live in framework-free modules — CRM edits in **`src/db/service.ts`**, county upsert in **`src/db/sync.ts`**, storage in **`src/db/store.ts`** (all async, plain functions); the server actions in `src/app/actions.ts` are thin wrappers that call these then `revalidatePath`/`redirect`. **When adding write logic, put it in the service/sync module, not the action.**
 
-**Verification:** `pnpm exec tsx scripts/verify_sync.ts` asserts the county upsert refreshes county fields while preserving user research (scores/status/notes/probate/beds/sqft) + auto-scores new rows. `pnpm typecheck` and `pnpm build` are clean; all routes render 200 in production. (The original §8 CSV-acceptance was verified 2026-07-12 before the dynamic pull superseded CSV import; that test + the seed/sample tooling were removed 2026-07-13 to keep fake data out.)
+**Verification:** `pnpm typecheck` + `pnpm build` clean; all routes render 200 in production; auth verified (401 no-creds / 200 with creds / 401 wrong pw). (There's no automated test script currently — the old `verify_sync.ts`/`verify_acceptance.ts` were removed in the Redis rewrite / fake-data purge. Re-add a store-level upsert test if you touch sync.)
 
-**Suggested NEXT (Phase 2):** district gate + scoring engine — load Hudson SD boundary GeoJSON (WI DPI shapefile → GeoJSON), point-in-polygon flag on `in_hudson_sd` (never trust mailing city — "Hudson, WI 54016" extends into St. Croix Central / River Falls districts), then auto-compute fit/motivation from the §4 rubric with manual override. The land project already solved Hudson SD identification via the state parcel layer's `SCHOOLDIST` field — reuse that approach or the boundary polygon. Then Phase 3 (letter-merge PDFs from §6 templates), Phase 4 (weekly WCCA/obit intake), Phase 5 (comp helper).
+**Suggested NEXT:** (a) enrich the 2,193 fit-band homes with the full land pipeline (water/septic/slope/TCE) — currently only the 243 ≥10 ac parcels are land-matched from the land tool's geojson; (b) refine scoring now real data flows (add the manual signals: probate/obit via the weekly WCCA review, tenure/lottery via county records); (c) Phase 3 letter-merge PDFs from §6 templates; (d) map polish (marker clustering when zoomed out, resizable map/table split like the land tool). Phase 2's SD gate is effectively handled by the SCHOOLDIST filter; a boundary-polygon point-in-polygon refinement is optional (mailing city ≠ district — parcels already carry SCHOOLDIST so it's reliable).
 
 ## The §7 schema (the `Lead` type — `src/lib/types.ts`)
 Plain JSON object per parcel, keyed by `parcelId` in the store. Key fields: `parcelId` (unique key), `address`/`municipality`, `inHudsonSd`, `ownerName`/`mailingAddress`, `acreage`/`yearBuilt`/`sqft`/`beds`, `assessedValue`/`estMarket`, `lotteryCredit`, `tenureYears`, `source`, `probateCaseNo`/`prName`/`prAttorney`, `fitScore`/`motivationScore`/`total`, `status`, `letter1Date`/`letter2Date`/`responseDate`, `notes`/`nextAction`/`nextActionDate`, county-sync fields (`landValue`/`impValue`/`lat`/`lon`/`propClass`/`parcelType`/`absentee`/`landData`/`syncedAt`), `createdAt`/`updatedAt`, and **`log: NoteEntry[]`** (embedded timestamped activity log — status changes + notes; `{body,kind:note|status|system,createdAt}`). All dates are ISO strings; date-only fields are `YYYY-MM-DD` (lexical == chronological for the Today queue).
@@ -67,8 +66,8 @@ src/
              · parcels.ts (ArcGIS fetch/map + absentee) · land.ts (enrichment summary) · coerce.ts · csv.ts · util.ts
   app/       page.tsx (leads+filters+sync) · board/ · today/ · new/ · import/ · leads/[parcelId]/ (detail+county/land panel)
              · actions.ts (server actions incl. syncFromCounty) · layout.tsx · globals.css
-  components/ Nav · badges · StatusSelect · InlineField · NoteComposer · NewLeadForm · ImportClient
-             · DeleteButton · SyncButton · LeadFilters
+  components/ LeadsExplorer (map+table+two-way link) · Nav · badges · StatusSelect · InlineField
+             · NoteComposer · NewLeadForm · ImportClient · DeleteButton · SyncButton · LeadFilters
 scripts/     sync · push_store (leads.json→Redis) · loadenv (.env.local loader for tsx)   (run via tsx)
 data/        leads.json (GITIGNORED — real PII; local dev fallback; prod uses Redis)
 ```
