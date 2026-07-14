@@ -371,6 +371,75 @@ input.filter-input {
   text-align: center;
   padding: 6px;
 }
+
+/* ---- Map ---- */
+.map-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.lead-map {
+  height: 420px;
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  background: #dfe6ee;
+  z-index: 0;
+}
+.lead-map .leaflet-container {
+  border-radius: var(--radius);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.seg button {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border: none;
+  background: #fff;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.seg button + button {
+  border-left: 1px solid var(--border);
+}
+.seg button.on {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.legend {
+  display: inline-flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.lgnd {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.lgnd .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+table.leads tbody tr {
+  cursor: pointer;
+}
+table.leads tbody tr.row-sel {
+  background: var(--accent-soft) !important;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 .kv {
   display: grid;
   grid-template-columns: auto 1fr;

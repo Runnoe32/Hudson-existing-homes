@@ -35,7 +35,20 @@ export interface LeadFilter {
   limit?: number;
 }
 
-export async function getLeadsFiltered(f: LeadFilter): Promise<{ rows: Lead[]; total: number }> {
+/** Slim per-lead shape for map pins (keeps the client payload small). */
+export interface LeadPin {
+  parcelId: string;
+  lat: number;
+  lon: number;
+  total: number;
+  parcelType: "home-fit" | "acreage-split" | null;
+  ownerName: string | null;
+  status: string;
+}
+
+export async function getLeadsFiltered(
+  f: LeadFilter,
+): Promise<{ rows: Lead[]; total: number; pins: LeadPin[] }> {
   let rows = await getAll();
   if (f.q) {
     const q = f.q.trim().toLowerCase();
@@ -51,7 +64,21 @@ export async function getLeadsFiltered(f: LeadFilter): Promise<{ rows: Lead[]; t
 
   rows.sort(byScore);
   const total = rows.length;
-  return { rows: rows.slice(0, f.limit ?? 250), total };
+
+  // All matching leads that have coordinates become map pins (not just the top N).
+  const pins: LeadPin[] = rows
+    .filter((l) => l.lat != null && l.lon != null)
+    .map((l) => ({
+      parcelId: l.parcelId,
+      lat: l.lat!,
+      lon: l.lon!,
+      total: l.total ?? 0,
+      parcelType: l.parcelType,
+      ownerName: l.ownerName,
+      status: l.status,
+    }));
+
+  return { rows: rows.slice(0, f.limit ?? 250), total, pins };
 }
 
 /** Leads grouped by status, in pipeline order — powers the board. */
