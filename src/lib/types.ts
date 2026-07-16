@@ -63,9 +63,11 @@ export interface Lead {
   research: string | null; // JSON string of owner/motivation research (open-web + WCCA)
 
   // Computed at read (lib/priority.ts) — owner category + whether the owner is
-  // deprioritized (active rental portfolio / institutional). NOT persisted.
+  // deprioritized (active rental portfolio / institutional), and whether the
+  // parcel looks like a twin-home/townhome unit vs. detached SFH. NOT persisted.
   category?: import("./priority").OwnerCategory;
   deprioritized?: boolean;
+  multiUnit?: boolean;
 
   // Bookkeeping
   syncedAt: string | null; // ISO

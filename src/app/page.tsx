@@ -25,6 +25,7 @@ export default async function LeadsPage({
     minAssessed: sp.minval ? Number(sp.minval) : undefined,
     maxAssessed: sp.maxval ? Number(sp.maxval) : undefined,
     minAcres: sp.minac ? Number(sp.minac) : undefined,
+    singleFamilyOnly: sp.sfh === "1",
     limit: LIMIT,
   };
   const { rows, total, pins } = await getLeadsFiltered(filter);

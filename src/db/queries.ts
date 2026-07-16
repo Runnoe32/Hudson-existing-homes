@@ -37,6 +37,7 @@ export interface LeadFilter {
   minAcres?: number;
   enrichedOnly?: boolean;
   hideDeprioritized?: boolean;
+  singleFamilyOnly?: boolean;
   limit?: number;
 }
 
@@ -74,6 +75,7 @@ export async function getLeadsFiltered(
   if (typeof f.minAcres === "number") rows = rows.filter((l) => (l.acreage ?? 0) >= f.minAcres!);
   if (f.enrichedOnly) rows = rows.filter((l) => l.landData != null);
   if (f.hideDeprioritized) rows = rows.filter((l) => !l.deprioritized);
+  if (f.singleFamilyOnly) rows = rows.filter((l) => !l.multiUnit);
 
   rows.sort(byPriorityScore);
   const total = rows.length;

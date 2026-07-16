@@ -24,7 +24,7 @@ import fs from "node:fs";
 import { loadEnvLocal } from "./loadenv";
 import { getAllMap } from "../src/db/store";
 import { groupByOwner, isEntity, isOutOfState, mailingKey, ownerKey } from "../src/lib/owner";
-import { classifyOwner, isDeprioritized, portfolioSizes } from "../src/lib/priority";
+import { classifyOwner, isDeprioritized, multiUnitParcels, portfolioSizes } from "../src/lib/priority";
 import type { Lead } from "../src/lib/types";
 
 loadEnvLocal();
@@ -40,6 +40,7 @@ const MINVAL = argVal("minval") !== "" ? Number(argVal("minval")) : 450_000;
 const MAXVAL = argVal("maxval") !== "" ? Number(argVal("maxval")) : 600_000;
 const MINAC = argVal("minac") !== "" ? Number(argVal("minac")) : 0; // min acreage (0 = off)
 const STRICT = process.argv.includes("--strict");
+const SFH_ONLY = process.argv.includes("--sfh"); // exclude likely twin-home/townhome units
 
 const INBOX = "./data/research_inbox.json";
 const OUT = "./data/research_next.json";
@@ -90,6 +91,11 @@ function groupScore(members: Lead[]): number {
   if (MINAC > 0) pool = pool.filter((l) => (l.acreage ?? 0) >= MINAC);
   // --strict: hard-restrict the pool to the focus value band.
   if (STRICT) pool = pool.filter((l) => inBand(l.assessedValue));
+  // --sfh: drop parcels that look like twin-home/townhome units (best-effort).
+  if (SFH_ONLY) {
+    const multi = multiUnitParcels(leads);
+    pool = pool.filter((l) => !multi.has(l.parcelId));
+  }
 
   // Group across the FULL lead set (not the type-filtered pool) so an owner's
   // parcel count and portfolio value reflect everything they actually hold.

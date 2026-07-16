@@ -46,6 +46,7 @@ interface Findings {
   reachability_confidence?: string | null;
   owner_context?: string | null;
   likely_motivation?: string | null;
+  property_type?: string | null; // single-family | twin-home | townhome | condo | duplex | …
   wcca_case?: string | null; // set by match_wcca.mjs (probate/divorce/foreclosure)
   sources?: unknown;
   notes?: string | null;
@@ -87,6 +88,8 @@ function loadInbox(): Record<string, Findings> {
 function summarize(r: Findings): string {
   const bits: string[] = [];
   if (r.deceased === true) bits.push("owner appears DECEASED (obituary) — verify in WCCA probate");
+  if (r.property_type && !/single.?family/i.test(r.property_type))
+    bits.push(`⚠ ${r.property_type} (not single-family)`);
   if (r.likely_motivation && r.likely_motivation !== "none-found")
     bits.push(`motivation: ${r.likely_motivation}`);
   if (r.est_purchase_year) bits.push(`acquired ~${r.est_purchase_year}`);

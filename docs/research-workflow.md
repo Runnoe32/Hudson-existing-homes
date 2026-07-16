@@ -62,6 +62,20 @@ selection**. Toggle "Hide rentals/institutional" in the app to drop them entirel
 Classification is computed at read time — nothing is persisted, so re-running
 research or a county sync recomputes it automatically.
 
+### Single-family only (twin-home / townhome exclusion)
+The free parcel layer has **no building-type field** (single-family vs twin/
+townhome/condo lives in the scrape-restricted assessor detail, same gap as
+beds/sqft), so this is **best-effort**. `multiUnitParcels()` flags a parcel as
+likely multi-unit when: the situs has a `UNIT`/`APT`/`#` designator, the owner
+name says twin-home/townhome/condo/villa/duplex, or one owner holds ≥2 homes on
+the same street (a twin-home development's signature — e.g. Stout's 14 on Wilfred
+/ 10 on Fraser). Requiring ≥~0.75 ac already excludes typical condo/townhome
+units (they own a unit, not acreage), so the home-fit pool is overwhelmingly
+detached SFH already. App: "Single-family only" filter (param `sfh=1`);
+selection: `pnpm research-next … --sfh`. For an individually-owned twin/townhome
+with none of these signals, confirm per-finalist via the agent's `property_type`
+(read off a Redfin/Zillow listing).
+
 ### Subagent prompt template (open web only)
 > You are researching property owners for a PRIVATE, fair-value, non-pressure
 > off-market home-purchase effort in the Hudson, WI area (St. Croix County). Use
@@ -73,8 +87,10 @@ research or a county sync recomputes it automatically.
 > est_purchase_year; phone/email (matched to THIS person, with source);
 > reachability_confidence high|med|low; owner_context (snowbird/landlord/
 > relocated/local-business/farmer/developer); likely_motivation
-> estate|landlord|relocated|snowbird|long-tenure|investor|none-found; sources[];
-> notes.
+> estate|landlord|relocated|snowbird|long-tenure|investor|developer-inventory|none-found;
+> **property_type** (single-family | twin-home | townhome | condo | duplex |
+> multi-family — read it off a Redfin/Zillow/realtor listing, which labels it;
+> we only want single-family); sources[]; notes.
 > HARD RULES: public sources only, never fabricate; confirm identity by NAME +
 > location (WI town/St. Croix OR the owner's known out-of-state city); a same-name
 > person elsewhere is NOT a match (→ confidence low). **Do NOT research, infer, or

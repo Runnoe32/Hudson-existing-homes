@@ -20,6 +20,61 @@ const INSTITUTIONAL_RE =
 const DEVELOPER_RE = /\b(DEVELOP(MENT|ERS|MENTS)?|BUILDERS?|CONSTRUCTION|HOMES\s+LLC)\b/i;
 const RENTAL_RE = /\b(RENTALS?)\b/i;
 
+// Twin-home / townhome / condo signals. The free parcel layer has NO building-type
+// field, so single-family-vs-twin can't be read directly — these are the only
+// heuristics available: an explicit unit designator in the situs, a twin/townhome
+// owner name, or one owner holding multiple homes on the same street (the
+// signature of a twin-home development like the Stout "Willow River Twin Homes").
+// An individually-owned twin/townhome with none of these looks identical to a SFH
+// here and can only be confirmed per-finalist (assessor record / a Redfin/Zillow
+// "property type"). NOTE: requiring ≥~0.75 ac already excludes typical condo/
+// townhome units (which own a unit, not acreage), so this mainly catches rural
+// twin-home developments.
+const UNIT_ADDR_RE = /\b(UNIT|APT|BLDG|#)\b/i;
+const MULTIUNIT_NAME_RE =
+  /\b(TWIN\s?HOMES?|TOWN\s?HOMES?|TWINHOMES?|TOWNHOMES?|TWNHM|\bCONDO|CONDOMINIUM|VILLAS?|DUPLEX)\b/i;
+
+/** Normalize a situs to just its street (drop house number, unit, directionals). */
+function streetKey(addr?: string | null): string {
+  return (addr ?? "")
+    .replace(/^\s*\d+\s*/, "")
+    .replace(/\bUNIT\b.*$/i, "")
+    .replace(/[^A-Z0-9 ]/gi, " ")
+    .replace(/\b[NSEW]\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+/**
+ * Parcel IDs that look like a unit in a twin-home/townhome development rather than
+ * a detached single-family home (best-effort — see UNIT_ADDR_RE note above).
+ */
+export function multiUnitParcels(leads: Lead[]): Set<string> {
+  // Cluster: same owner holding ≥2 homes on the same street.
+  const byOwnerStreet = new Map<string, string[]>();
+  for (const l of leads) {
+    const k = ownerKey(l.ownerName);
+    if (!k) continue;
+    const key = `${k}||${streetKey(l.address)}`;
+    (byOwnerStreet.get(key) ?? byOwnerStreet.set(key, []).get(key)!).push(l.parcelId);
+  }
+  const clustered = new Set<string>();
+  for (const ids of byOwnerStreet.values())
+    if (ids.length >= 2) for (const id of ids) clustered.add(id);
+
+  const out = new Set<string>();
+  for (const l of leads) {
+    if (
+      UNIT_ADDR_RE.test(l.address ?? "") ||
+      MULTIUNIT_NAME_RE.test(l.ownerName ?? "") ||
+      clustered.has(l.parcelId)
+    )
+      out.add(l.parcelId);
+  }
+  return out;
+}
+
 interface ResearchBlob {
   owner_context?: string | null;
   likely_motivation?: string | null;
@@ -83,10 +138,12 @@ export function isDeprioritized(category: OwnerCategory): boolean {
  */
 export function annotatePriority(leads: Lead[]): Lead[] {
   const sizes = portfolioSizes(leads);
+  const multi = multiUnitParcels(leads);
   for (const l of leads) {
     const cat = classifyOwner(l, sizes.get(ownerKey(l.ownerName)) ?? 1);
     l.category = cat;
     l.deprioritized = isDeprioritized(cat);
+    l.multiUnit = multi.has(l.parcelId);
   }
   return leads;
 }

@@ -23,6 +23,7 @@ export function LeadFilters() {
   const absentee = params.get("absentee") === "1";
   const enriched = params.get("enriched") === "1";
   const hidedep = params.get("hidedep") === "1";
+  const sfh = params.get("sfh") === "1";
   // Assessed-value band. "450-600" is the current focus tier; the value maps to
   // minval/maxval params so the server can filter on assessedValue.
   const valueBand =
@@ -104,8 +105,12 @@ export function LeadFilters() {
         <input type="checkbox" checked={hidedep} onChange={(e) => setParam("hidedep", e.target.checked ? "1" : "")} />
         Hide rentals/institutional
       </label>
+      <label className="filter-check" title="Best-effort: excludes twin-home / townhome units we can detect (unit-designator addresses, twin/townhome owner names, and same-owner same-street clusters). Building type isn't in the free parcel data, so confirm SFH per finalist.">
+        <input type="checkbox" checked={sfh} onChange={(e) => setParam("sfh", e.target.checked ? "1" : "")} />
+        Single-family only
+      </label>
 
-      {(type || status || min || valueBand || minac || absentee || enriched || hidedep || params.get("q")) && (
+      {(type || status || min || valueBand || minac || absentee || enriched || hidedep || sfh || params.get("q")) && (
         <button className="btn sm" onClick={() => router.push("/")}>
           Clear
         </button>
