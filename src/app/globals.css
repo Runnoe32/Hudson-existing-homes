@@ -328,6 +328,45 @@ table.leads td.num {
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
+.badge-estate {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 5px;
+  background: #2b2f36;
+  color: #f2d9a0;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Owner-category badges (rental portfolio / institutional / developer). */
+.badge-cat {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+.badge-cat.cat-rental {
+  background: #e7ecf2;
+  color: #5b6675;
+}
+.badge-cat.cat-inst {
+  background: #e2e5ea;
+  color: #6a7080;
+}
+.badge-cat.cat-dev {
+  background: #e6f0ff;
+  color: #2f5fa8;
+}
 
 /* ---- Filter bar ---- */
 .filters {

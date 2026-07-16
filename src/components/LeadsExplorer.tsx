@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Lead } from "@/lib/types";
 import type { LeadPin } from "@/db/queries";
-import { ScoreBadge } from "./badges";
+import { ScoreBadge, EstateBadge, CategoryBadge } from "./badges";
 import { StatusSelect } from "./StatusSelect";
 import { fmtMoney } from "@/lib/util";
 import { parseLandData, summarizeLand } from "@/lib/land";
@@ -49,7 +49,21 @@ function signals(l: Lead): { text: string; cls: string }[] {
   const out: { text: string; cls: string }[] = [];
   if (l.absentee) out.push({ text: "absentee", cls: "" });
   if ((l.tenureYears ?? 0) >= 25) out.push({ text: `${l.tenureYears}yr`, cls: "" });
-  if (l.source === "probate") out.push({ text: "probate", cls: "good" });
+  // Researched motivation source (estate is shown as its own badge, not here).
+  const MOT: Record<string, string> = {
+    probate: "probate",
+    divorce: "divorce",
+    foreclosure: "foreclosure",
+    landlord: "landlord",
+    relocated: "relocated",
+    snowbird: "snowbird",
+    investor: "investor",
+    "long-tenure": "long-tenure",
+  };
+  // A rental/investor motivation is already conveyed by the category badge (and
+  // shouldn't read as a "good" buy-signal on a deprioritized row), so skip it there.
+  const suppress = l.deprioritized && (l.source === "landlord" || l.source === "investor");
+  if (l.source && MOT[l.source] && !suppress) out.push({ text: MOT[l.source], cls: "good" });
   const land = summarizeLand(parseLandData(l.landData));
   const bad = land?.flags.find((f) => f.cls === "bad");
   if (bad) out.push({ text: bad.text, cls: "warn" });
@@ -103,16 +117,18 @@ export function LeadsExplorer({ rows, pins, total }: { rows: Lead[]; pins: LeadP
     markers.current.clear();
     for (const p of pins) {
       const color = colorBy === "score" ? scoreColor(p.total) : typeColor(p.parcelType);
+      // Deprioritized owners (rental portfolios / institutional) render small and
+      // faint so they don't read as hot leads on the map.
       const m = L.circleMarker([p.lat, p.lon], {
-        radius: 6,
+        radius: p.deprioritized ? 4 : 6,
         weight: 1.5,
         color: "rgba(0,0,0,0.55)",
-        fillColor: color,
-        fillOpacity: 0.95,
+        fillColor: p.deprioritized ? "#8a94a0" : color,
+        fillOpacity: p.deprioritized ? 0.5 : 0.95,
       });
       m.bindPopup(
         `<div style="min-width:150px">` +
-          `<b>${esc(p.ownerName || "(unknown)")}</b>` +
+          `<b>${p.estate ? "⚰ " : ""}${esc(p.ownerName || "(unknown)")}</b>` +
           `<div style="color:#5b6675;font-size:12px;margin:3px 0">score ${p.total} · ${p.parcelType ?? "—"} · ${esc(p.status)}</div>` +
           `<a href="/leads/${encodeURIComponent(p.parcelId)}" style="font-size:12px">Open full lead ↗</a>` +
           `</div>`,
@@ -204,6 +220,8 @@ export function LeadsExplorer({ rows, pins, total }: { rows: Lead[]; pins: LeadP
                     <Link href={`/leads/${encodeURIComponent(l.parcelId)}`} onClick={(e) => e.stopPropagation()}>
                       {l.ownerName || "(unknown owner)"}
                     </Link>
+                    {l.source === "estate" && <EstateBadge />}
+                    <CategoryBadge category={l.category ?? null} />
                     {l.parcelType === "acreage-split" && (
                       <span className="pill-flag" style={{ marginLeft: 6 }} title="≥10 acres — split-parcel play">
                         ⌂+land

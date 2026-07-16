@@ -4,14 +4,15 @@ import { getAll, getOne } from "./store";
 import type { Lead, NoteEntry } from "@/lib/types";
 import { todayISO } from "@/lib/util";
 import { STATUSES } from "@/lib/constants";
+import { annotatePriority, byPriorityScore } from "@/lib/priority";
 
-function byScore(a: Lead, b: Lead): number {
-  if ((b.total ?? 0) !== (a.total ?? 0)) return (b.total ?? 0) - (a.total ?? 0);
-  return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+/** Load every lead with owner-category annotation attached (for sort + badges). */
+async function getAllAnnotated(): Promise<Lead[]> {
+  return annotatePriority(await getAll());
 }
 
 export async function getLeads(): Promise<Lead[]> {
-  return (await getAll()).sort(byScore);
+  return (await getAllAnnotated()).sort(byPriorityScore);
 }
 
 export async function getLead(parcelId: string): Promise<Lead | null> {
@@ -31,7 +32,11 @@ export interface LeadFilter {
   absentee?: boolean;
   status?: string;
   minTotal?: number;
+  maxAssessed?: number;
+  minAssessed?: number;
+  minAcres?: number;
   enrichedOnly?: boolean;
+  hideDeprioritized?: boolean;
   limit?: number;
 }
 
@@ -44,12 +49,14 @@ export interface LeadPin {
   parcelType: "home-fit" | "acreage-split" | null;
   ownerName: string | null;
   status: string;
+  estate: boolean;
+  deprioritized: boolean;
 }
 
 export async function getLeadsFiltered(
   f: LeadFilter,
 ): Promise<{ rows: Lead[]; total: number; pins: LeadPin[] }> {
-  let rows = await getAll();
+  let rows = await getAllAnnotated();
   if (f.q) {
     const q = f.q.trim().toLowerCase();
     rows = rows.filter((l) =>
@@ -60,9 +67,15 @@ export async function getLeadsFiltered(
   if (f.absentee) rows = rows.filter((l) => l.absentee);
   if (f.status) rows = rows.filter((l) => l.status === f.status);
   if (typeof f.minTotal === "number") rows = rows.filter((l) => (l.total ?? 0) >= f.minTotal!);
+  if (typeof f.minAssessed === "number")
+    rows = rows.filter((l) => (l.assessedValue ?? 0) >= f.minAssessed!);
+  if (typeof f.maxAssessed === "number")
+    rows = rows.filter((l) => (l.assessedValue ?? Infinity) <= f.maxAssessed!);
+  if (typeof f.minAcres === "number") rows = rows.filter((l) => (l.acreage ?? 0) >= f.minAcres!);
   if (f.enrichedOnly) rows = rows.filter((l) => l.landData != null);
+  if (f.hideDeprioritized) rows = rows.filter((l) => !l.deprioritized);
 
-  rows.sort(byScore);
+  rows.sort(byPriorityScore);
   const total = rows.length;
 
   // All matching leads that have coordinates become map pins (not just the top N).
@@ -76,6 +89,8 @@ export async function getLeadsFiltered(
       parcelType: l.parcelType,
       ownerName: l.ownerName,
       status: l.status,
+      estate: l.source === "estate",
+      deprioritized: !!l.deprioritized,
     }));
 
   return { rows: rows.slice(0, f.limit ?? 250), total, pins };
@@ -83,7 +98,7 @@ export async function getLeadsFiltered(
 
 /** Leads grouped by status, in pipeline order — powers the board. */
 export async function getBoard(): Promise<Record<string, Lead[]>> {
-  const rows = (await getAll()).sort(byScore);
+  const rows = (await getAllAnnotated()).sort(byPriorityScore);
   const grouped: Record<string, Lead[]> = {};
   for (const s of STATUSES) grouped[s] = [];
   for (const row of rows) (grouped[row.status] ??= []).push(row);

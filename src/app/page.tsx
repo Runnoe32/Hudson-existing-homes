@@ -20,7 +20,11 @@ export default async function LeadsPage({
     status: sp.status,
     absentee: sp.absentee === "1",
     enrichedOnly: sp.enriched === "1",
+    hideDeprioritized: sp.hidedep === "1",
     minTotal: sp.min ? Number(sp.min) : undefined,
+    minAssessed: sp.minval ? Number(sp.minval) : undefined,
+    maxAssessed: sp.maxval ? Number(sp.maxval) : undefined,
+    minAcres: sp.minac ? Number(sp.minac) : undefined,
     limit: LIMIT,
   };
   const { rows, total, pins } = await getLeadsFiltered(filter);

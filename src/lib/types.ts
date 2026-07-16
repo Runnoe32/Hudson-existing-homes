@@ -60,6 +60,12 @@ export interface Lead {
   parcelType: "home-fit" | "acreage-split" | null;
   absentee: boolean;
   landData: string | null; // JSON string of land enrichment
+  research: string | null; // JSON string of owner/motivation research (open-web + WCCA)
+
+  // Computed at read (lib/priority.ts) — owner category + whether the owner is
+  // deprioritized (active rental portfolio / institutional). NOT persisted.
+  category?: import("./priority").OwnerCategory;
+  deprioritized?: boolean;
 
   // Bookkeeping
   syncedAt: string | null; // ISO
@@ -109,6 +115,7 @@ export function blankLead(parcelId: string, now = new Date().toISOString()): Lea
     parcelType: null,
     absentee: false,
     landData: null,
+    research: null,
     syncedAt: null,
     createdAt: now,
     updatedAt: now,

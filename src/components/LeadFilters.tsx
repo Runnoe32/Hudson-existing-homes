@@ -19,8 +19,26 @@ export function LeadFilters() {
   const type = params.get("type") ?? "";
   const status = params.get("status") ?? "";
   const min = params.get("min") ?? "";
+  const minac = params.get("minac") ?? "";
   const absentee = params.get("absentee") === "1";
   const enriched = params.get("enriched") === "1";
+  const hidedep = params.get("hidedep") === "1";
+  // Assessed-value band. "450-600" is the current focus tier; the value maps to
+  // minval/maxval params so the server can filter on assessedValue.
+  const valueBand =
+    params.get("minval") === "450000" && params.get("maxval") === "600000" ? "450-600" : "";
+
+  function setValueBand(v: string) {
+    const next = new URLSearchParams(params.toString());
+    if (v === "450-600") {
+      next.set("minval", "450000");
+      next.set("maxval", "600000");
+    } else {
+      next.delete("minval");
+      next.delete("maxval");
+    }
+    router.push(`/?${next.toString()}`);
+  }
 
   return (
     <div className="filters">
@@ -61,6 +79,19 @@ export function LeadFilters() {
         <option value="6">Score ≥ 6</option>
       </select>
 
+      <select className="filter-input" value={valueBand} onChange={(e) => setValueBand(e.target.value)}>
+        <option value="">Any value</option>
+        <option value="450-600">Assessed $450–600k</option>
+      </select>
+
+      <select className="filter-input" value={minac} onChange={(e) => setParam("minac", e.target.value)}>
+        <option value="">Any size</option>
+        <option value="1">≥ 1 acre</option>
+        <option value="2">≥ 2 acres</option>
+        <option value="3">≥ 3 acres</option>
+        <option value="5">≥ 5 acres</option>
+      </select>
+
       <label className="filter-check">
         <input type="checkbox" checked={absentee} onChange={(e) => setParam("absentee", e.target.checked ? "1" : "")} />
         Absentee
@@ -69,8 +100,12 @@ export function LeadFilters() {
         <input type="checkbox" checked={enriched} onChange={(e) => setParam("enriched", e.target.checked ? "1" : "")} />
         Land-matched
       </label>
+      <label className="filter-check">
+        <input type="checkbox" checked={hidedep} onChange={(e) => setParam("hidedep", e.target.checked ? "1" : "")} />
+        Hide rentals/institutional
+      </label>
 
-      {(type || status || min || absentee || enriched || params.get("q")) && (
+      {(type || status || min || valueBand || minac || absentee || enriched || hidedep || params.get("q")) && (
         <button className="btn sm" onClick={() => router.push("/")}>
           Clear
         </button>

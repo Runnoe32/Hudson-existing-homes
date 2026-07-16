@@ -12,7 +12,10 @@
     "sync": "tsx scripts/sync.ts",
     "push-store": "tsx scripts/push_store.ts",
     "enrich-export": "node scripts/export_for_enrich.mjs",
-    "enrich-apply": "tsx scripts/apply_enrichment.ts"
+    "enrich-apply": "tsx scripts/apply_enrichment.ts",
+    "research-next": "tsx scripts/next_research.ts",
+    "merge-research": "tsx scripts/merge_research.ts",
+    "match-wcca": "node scripts/match_wcca.mjs"
   },
   "dependencies": {
     "@upstash/redis": "^1.34.0",

@@ -5,7 +5,7 @@ import { LEAD_FIELDS } from "@/lib/constants";
 import { InlineField } from "@/components/InlineField";
 import { NoteComposer } from "@/components/NoteComposer";
 import { StatusSelect } from "@/components/StatusSelect";
-import { ScoreBadge } from "@/components/badges";
+import { ScoreBadge, EstateBadge } from "@/components/badges";
 import { DeleteButton } from "@/components/DeleteButton";
 import { fmtTimestamp, fmtMoney } from "@/lib/util";
 import { parseLandData, summarizeLand } from "@/lib/land";
@@ -45,6 +45,7 @@ export default async function LeadDetail({ params }: { params: Promise<{ parcelI
         </div>
         <div className="row-gap">
           <ScoreBadge total={lead.total ?? 0} fit={lead.fitScore} motivation={lead.motivationScore} />
+          {lead.source === "estate" && <EstateBadge />}
           <StatusSelect parcelId={lead.parcelId} status={lead.status} />
         </div>
       </div>
