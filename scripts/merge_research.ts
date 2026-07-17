@@ -59,6 +59,13 @@ function researchBoost(r: Findings): number {
   let b = 0;
   if (r.deceased === true) b += 5; // estate — strongest motivation
   switch (r.likely_motivation) {
+    case "foreclosure": // financial distress — a strong, time-boxed motivation
+    case "divorce":
+      b += 4;
+      break;
+    case "guardianship":
+      b += 3;
+      break;
     case "long-tenure":
       b += 2;
       break;
