@@ -200,6 +200,25 @@ table.leads th {
   position: sticky;
   top: 0;
 }
+table.leads th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+table.leads th.sortable:hover {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+table.leads th.sortable.sorted {
+  color: var(--accent-ink);
+}
+.sort-caret {
+  margin-left: 5px;
+  font-size: 9px;
+  opacity: 0.55;
+}
+table.leads th.sortable.sorted .sort-caret {
+  opacity: 1;
+}
 table.leads td {
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
@@ -409,6 +428,31 @@ input.filter-input {
   font-size: 11.5px;
   text-align: center;
   padding: 6px;
+}
+
+/* Min/max numeric range (assessed value, house value) */
+.range-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 3px 8px;
+  background: var(--panel-2);
+}
+.range-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.range-dash {
+  color: var(--text-faint);
+}
+.filter-input.range-num {
+  min-width: 0;
+  width: 72px;
+  padding: 4px 7px;
 }
 
 /* ---- Map ---- */

@@ -2,8 +2,9 @@
 
 import "leaflet/dist/leaflet.css";
 import type { CircleMarker, Map as LMap } from "leaflet";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { Lead } from "@/lib/types";
 import type { LeadPin } from "@/db/queries";
 import { ScoreBadge, EstateBadge, CategoryBadge } from "./badges";
@@ -70,9 +71,48 @@ function signals(l: Lead): { text: string; cls: string }[] {
   return out;
 }
 
+// Column key → default sort direction on first click (numbers high→low, text low→high).
+const SORTABLE = {
+  total: "desc",
+  owner: "asc",
+  municipality: "asc",
+  acreage: "desc",
+  impValue: "desc",
+  assessedValue: "desc",
+} as const;
+type SortCol = keyof typeof SORTABLE;
+
 export function LeadsExplorer({ rows, pins, total }: { rows: Lead[]; pins: LeadPin[]; total: number }) {
   const [colorBy, setColorBy] = useState<ColorBy>("score");
   const [selected, setSelected] = useState<string | null>(null);
+
+  const router = useRouter();
+  const params = useSearchParams();
+  const activeSort = (params.get("sort") ?? "priority") as SortCol | "priority";
+  const activeDir = params.get("dir") === "asc" ? "asc" : "desc";
+
+  function sortBy(col: SortCol) {
+    const next = new URLSearchParams(params.toString());
+    // Same column → flip direction; new column → its natural default direction.
+    const dir = activeSort === col ? (activeDir === "asc" ? "desc" : "asc") : SORTABLE[col];
+    next.set("sort", col);
+    next.set("dir", dir);
+    router.push(`/?${next.toString()}`);
+  }
+
+  function SortTh({ col, children, num }: { col: SortCol; children: ReactNode; num?: boolean }) {
+    const on = activeSort === col;
+    return (
+      <th
+        className={`sortable${num ? " num" : ""}${on ? " sorted" : ""}`}
+        onClick={() => sortBy(col)}
+        title="Click to sort; click again to reverse"
+      >
+        {children}
+        <span className="sort-caret">{on ? (activeDir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </th>
+    );
+  }
 
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LMap | null>(null);
@@ -194,12 +234,18 @@ export function LeadsExplorer({ rows, pins, total }: { rows: Lead[]; pins: LeadP
         <table className="leads">
           <thead>
             <tr>
-              <th style={{ width: 66 }}>Score</th>
-              <th>Owner / address</th>
-              <th>Municipality</th>
-              <th className="num">Acres</th>
-              <th className="num">House val</th>
-              <th className="num">Assessed</th>
+              <SortTh col="total">Score</SortTh>
+              <SortTh col="owner">Owner / address</SortTh>
+              <SortTh col="municipality">Municipality</SortTh>
+              <SortTh col="acreage" num>
+                Acres
+              </SortTh>
+              <SortTh col="impValue" num>
+                House val
+              </SortTh>
+              <SortTh col="assessedValue" num>
+                Assessed
+              </SortTh>
               <th>Signals</th>
               <th style={{ minWidth: 140 }}>Status</th>
             </tr>
